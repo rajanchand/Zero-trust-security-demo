@@ -20,6 +20,40 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 // make supabase available to routes
 app.locals.supabase = supabase;
 
+// auto-migrate: ensure phone and gender columns exist
+async function runMigrations() {
+  try {
+    // try a quick select to see if columns exist already
+    var { error } = await supabase.from('users').select('phone, gender').limit(1);
+    if (!error) {
+      console.log('✓ Database schema OK (phone, gender columns exist)');
+      return;
+    }
+
+    console.log('⚙ Missing columns detected, attempting migration...');
+
+    // try using the run_migration RPC function (created by migrate.sql)
+    var { error: rpcErr } = await supabase.rpc('run_migration', {
+      sql_text: "ALTER TABLE public.users ADD COLUMN IF NOT EXISTS phone text DEFAULT ''; ALTER TABLE public.users ADD COLUMN IF NOT EXISTS gender text DEFAULT '';"
+    });
+
+    if (!rpcErr) {
+      console.log('✓ Migration successful — phone and gender columns added');
+    } else {
+      console.log('');
+      console.log('⚠️  Could not auto-migrate. Please run migrate.sql in Supabase SQL Editor:');
+      console.log('   1. Go to https://supabase.com/dashboard → SQL Editor');
+      console.log('   2. Paste the contents of migrate.sql and click Run');
+      console.log('   3. Restart this server');
+      console.log('');
+    }
+  } catch (err) {
+    console.log('⚠️  Migration check failed:', err.message);
+  }
+}
+
+runMigrations();
+
 // middleware
 app.use(cors());
 app.use(express.json());

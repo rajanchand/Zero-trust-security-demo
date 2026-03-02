@@ -54,7 +54,7 @@ router.post('/verify-otp', async (req, res) => {
 
     const { data, error } = await supabase
       .from('users')
-      .select('id, name, email, role, department, status, mfa, phone, gender, created_at')
+      .select('*')
       .eq('id', userId)
       .single();
 
@@ -87,7 +87,7 @@ router.get('/profile/:id', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('users')
-      .select('id, name, email, role, department, status, mfa, phone, gender, created_at')
+      .select('*')
       .eq('id', req.params.id)
       .single();
 
@@ -154,10 +154,17 @@ router.put('/profile/:id', async (req, res) => {
       .from('users')
       .update(updates)
       .eq('id', req.params.id)
-      .select('id, name, email, role, department, status, mfa, phone, gender, created_at')
+      .select('*')
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Profile update error:', error.message);
+      // if column doesn't exist, give helpful message
+      if (error.message && error.message.includes('does not exist')) {
+        return res.status(500).json({ error: 'Database migration needed. Please run migrate.sql in Supabase SQL Editor.' });
+      }
+      throw error;
+    }
 
     res.json({
       message: 'Profile updated',
@@ -175,6 +182,7 @@ router.put('/profile/:id', async (req, res) => {
       }
     });
   } catch (err) {
+    console.error('Profile update error:', err.message || err);
     res.status(500).json({ error: err.message || 'Server error' });
   }
 });

@@ -24,7 +24,7 @@ router.get('/', async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('users')
-      .select('id, name, email, role, department, status, mfa, created_at')
+      .select('*')
       .neq('role', 'Super Admin')
       .order('created_at', { ascending: false });
 
