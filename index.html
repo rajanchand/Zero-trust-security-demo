@@ -79,21 +79,24 @@
     <main id="tab-home" class="tab-content active">
       <h2 id="admin-greeting">Welcome, Admin</h2>
       <div class="grid-4">
-        <div class="stat-card">
+        <div class="stat-card clickable" onclick="switchToTab('tab-users')">
           <p class="stat-num blue-text" id="stat-total-users">0</p>
           <p class="stat-label">Total Users</p>
+          <small class="stat-hint">Click to manage</small>
         </div>
         <div class="stat-card">
           <p class="stat-num green-text">98.7%</p>
           <p class="stat-label">Trust Score</p>
         </div>
-        <div class="stat-card">
-          <p class="stat-num orange-text">23</p>
+        <div class="stat-card clickable" onclick="openModal('threats-modal')">
+          <p class="stat-num orange-text" id="stat-threats">23</p>
           <p class="stat-label">Active Threats</p>
+          <small class="stat-hint">Click for details</small>
         </div>
-        <div class="stat-card">
-          <p class="stat-num red-text">156</p>
+        <div class="stat-card clickable" onclick="openModal('blocked-modal')">
+          <p class="stat-num red-text" id="stat-blocked">156</p>
           <p class="stat-label">Blocked Attempts</p>
+          <small class="stat-hint">Click for details</small>
         </div>
       </div>
     </main>
@@ -204,6 +207,46 @@
           <button class="btn btn-blue btn-small" onclick="addDepartment()">Add</button>
         </div>
         <ul class="simple-list" id="dept-list"></ul>
+      </div>
+    </div>
+
+    <!-- ACTIVE THREATS MODAL -->
+    <div class="modal-overlay hide" id="threats-modal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3><i class="fas fa-exclamation-triangle orange-text"></i> Active Threats</h3>
+          <button class="modal-close" onclick="closeModal('threats-modal')">&times;</button>
+        </div>
+        <ul class="simple-list">
+          <li><i class="fas fa-exclamation-circle red-text"></i> Brute force attack from 192.168.1.45 <span class="badge red-bg">Critical</span></li>
+          <li><i class="fas fa-exclamation-circle orange-text"></i> Suspicious login from unknown device <span class="badge orange-bg">High</span></li>
+          <li><i class="fas fa-exclamation-circle orange-text"></i> Multiple failed MFA attempts — user bob@example.com <span class="badge orange-bg">High</span></li>
+          <li><i class="fas fa-exclamation-circle orange-text"></i> Anomalous API access pattern detected <span class="badge orange-bg">High</span></li>
+          <li><i class="fas fa-exclamation-circle blue-text"></i> Outdated TLS version on device-0x4F <span class="badge blue-bg">Medium</span></li>
+          <li><i class="fas fa-exclamation-circle blue-text"></i> Unregistered device connection attempt <span class="badge blue-bg">Medium</span></li>
+          <li><i class="fas fa-exclamation-circle blue-text"></i> Session token reuse detected <span class="badge blue-bg">Medium</span></li>
+        </ul>
+        <p class="muted" style="margin-top:14px;text-align:center;">Showing 7 of 23 active threats</p>
+      </div>
+    </div>
+
+    <!-- BLOCKED ATTEMPTS MODAL -->
+    <div class="modal-overlay hide" id="blocked-modal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3><i class="fas fa-ban red-text"></i> Blocked Attempts</h3>
+          <button class="modal-close" onclick="closeModal('blocked-modal')">&times;</button>
+        </div>
+        <ul class="simple-list">
+          <li><i class="fas fa-xmark red-text"></i> 192.168.1.45 — Brute force (32 attempts) <small>2m ago</small></li>
+          <li><i class="fas fa-xmark red-text"></i> 10.0.0.88 — Invalid credentials <small>5m ago</small></li>
+          <li><i class="fas fa-xmark red-text"></i> 172.16.0.12 — Expired session token <small>8m ago</small></li>
+          <li><i class="fas fa-xmark red-text"></i> 203.0.113.5 — Geo-location policy violation <small>15m ago</small></li>
+          <li><i class="fas fa-xmark red-text"></i> 198.51.100.3 — Unregistered device <small>22m ago</small></li>
+          <li><i class="fas fa-xmark red-text"></i> 192.168.2.10 — Failed MFA verification <small>30m ago</small></li>
+          <li><i class="fas fa-xmark red-text"></i> 10.0.1.55 — Access denied — insufficient role <small>45m ago</small></li>
+        </ul>
+        <p class="muted" style="margin-top:14px;text-align:center;">Showing 7 of 156 blocked attempts</p>
       </div>
     </div>
   </div>

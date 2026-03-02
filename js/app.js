@@ -612,6 +612,26 @@ async function removeDepartment(deptId, deptName) {
 }
 
 
+// ========== TAB HELPERS ==========
+
+function switchToTab(tabId) {
+  // deactivate all tabs and content
+  var allTabs = document.querySelectorAll('.tab');
+  var allContent = document.querySelectorAll('.tab-content');
+  for (var i = 0; i < allTabs.length; i++) {
+    allTabs[i].classList.remove('active');
+  }
+  for (var j = 0; j < allContent.length; j++) {
+    allContent[j].classList.remove('active');
+  }
+  // activate the target tab and content
+  var tabButton = document.querySelector('.tab[data-tab="' + tabId + '"]');
+  if (tabButton) tabButton.classList.add('active');
+  var tabContent = document.getElementById(tabId);
+  if (tabContent) tabContent.classList.add('active');
+}
+
+
 // ========== MODAL HELPERS ==========
 
 function openModal(modalId) {
