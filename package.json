@@ -8,6 +8,8 @@
     "start:dev": "npx nodemon server.js",
     "seed": "node seed.js",
     "seed:force": "node seed.js --yes",
+    "tunnel": "cloudflared tunnel --url http://localhost:3000",
+    "deploy": "node server.js & sleep 2 && cloudflared tunnel --url http://localhost:3000",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
