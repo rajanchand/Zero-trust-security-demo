@@ -12,6 +12,8 @@ function mapUser(row) {
     department: row.department,
     status: row.status,
     mfa: row.mfa,
+    phone: row.phone || '',
+    gender: row.gender || '',
     createdAt: row.created_at
   };
 }

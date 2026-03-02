@@ -22,7 +22,9 @@ var users = [
     role: 'Super Admin',
     department: 'IT',
     status: 'Active',
-    mfa: true
+    mfa: true,
+    phone: '+44 7911 000001',
+    gender: 'Male'
   },
   {
     name: 'Support User',
@@ -31,7 +33,9 @@ var users = [
     role: 'User',
     department: 'HR',
     status: 'Active',
-    mfa: true
+    mfa: true,
+    phone: '+44 7911 000002',
+    gender: 'Male'
   },
   {
     name: 'Alice Johnson',
@@ -40,7 +44,9 @@ var users = [
     role: 'Admin',
     department: 'Finance',
     status: 'Active',
-    mfa: true
+    mfa: true,
+    phone: '+44 7911 000003',
+    gender: 'Female'
   },
   {
     name: 'Bob Smith',
@@ -49,7 +55,9 @@ var users = [
     role: 'Manager',
     department: 'Operations',
     status: 'Active',
-    mfa: true
+    mfa: true,
+    phone: '+44 7911 000004',
+    gender: 'Male'
   },
   {
     name: 'Charlie Brown',
@@ -58,7 +66,9 @@ var users = [
     role: 'Viewer',
     department: 'Security',
     status: 'Suspended',
-    mfa: false
+    mfa: false,
+    phone: '',
+    gender: 'Prefer not to say'
   }
 ];
 
@@ -127,7 +137,9 @@ async function seed() {
         role: users[j].role,
         department: users[j].department,
         status: users[j].status,
-        mfa: users[j].mfa
+        mfa: users[j].mfa,
+        phone: users[j].phone || '',
+        gender: users[j].gender || ''
       }]);
       if (userErr) {
         console.error('  ✗ User "' + users[j].email + '": ' + userErr.message);

@@ -612,6 +612,134 @@ async function removeDepartment(deptId, deptName) {
 }
 
 
+// ========== PROFILE ==========
+
+function openProfileModal() {
+  if (!currentUser || !currentUser._id) return;
+
+  // fill the modal with current user data
+  document.getElementById('profile-avatar-letter').textContent = (currentUser.name || '?')[0].toUpperCase();
+  document.getElementById('profile-display-name').textContent = currentUser.name;
+  document.getElementById('profile-display-role').textContent = currentUser.role + ' — ' + currentUser.department;
+  document.getElementById('profile-name').value = currentUser.name || '';
+  document.getElementById('profile-email').value = currentUser.email || '';
+  document.getElementById('profile-phone').value = currentUser.phone || '';
+  document.getElementById('profile-gender').value = currentUser.gender || '';
+  document.getElementById('profile-department').value = currentUser.department || '';
+  document.getElementById('profile-status').value = currentUser.status || '';
+
+  // clear password fields and messages
+  document.getElementById('pw-current').value = '';
+  document.getElementById('pw-new').value = '';
+  hideMsg('profile-msg');
+  hideMsg('pw-msg');
+
+  openModal('profile-modal');
+}
+
+// save profile (name, phone, gender)
+document.addEventListener('DOMContentLoaded', function () {
+
+  document.getElementById('profile-form').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    hideMsg('profile-msg');
+
+    var name = document.getElementById('profile-name').value.trim();
+    var phone = document.getElementById('profile-phone').value.trim();
+    var gender = document.getElementById('profile-gender').value;
+
+    if (!name) {
+      showMsg('profile-msg', 'Name is required', 'err');
+      return;
+    }
+
+    try {
+      var response = await fetch('/api/auth/profile/' + currentUser._id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, phone: phone, gender: gender })
+      });
+      var data = await response.json();
+
+      if (!response.ok) {
+        showMsg('profile-msg', data.error || 'Update failed', 'err');
+        return;
+      }
+
+      // update local user data
+      currentUser.name = data.user.name;
+      currentUser.phone = data.user.phone;
+      currentUser.gender = data.user.gender;
+
+      // update header and greeting
+      document.getElementById('profile-avatar-letter').textContent = currentUser.name[0].toUpperCase();
+      document.getElementById('profile-display-name').textContent = currentUser.name;
+
+      if (currentUser.role === 'Super Admin') {
+        document.getElementById('admin-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
+      } else {
+        document.getElementById('user-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
+      }
+
+      showMsg('profile-msg', 'Profile updated successfully!', 'success');
+    } catch (err) {
+      showMsg('profile-msg', 'Failed to update profile', 'err');
+    }
+  });
+
+  // change password
+  document.getElementById('password-form').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    hideMsg('pw-msg');
+
+    var currentPw = document.getElementById('pw-current').value;
+    var newPw = document.getElementById('pw-new').value;
+
+    if (!currentPw || !newPw) {
+      showMsg('pw-msg', 'Both fields are required', 'err');
+      return;
+    }
+
+    if (newPw.length < 8) {
+      showMsg('pw-msg', 'New password must be at least 8 characters', 'err');
+      return;
+    }
+
+    try {
+      var response = await fetch('/api/auth/profile/' + currentUser._id, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw })
+      });
+      var data = await response.json();
+
+      if (!response.ok) {
+        showMsg('pw-msg', data.error || 'Password change failed', 'err');
+        return;
+      }
+
+      document.getElementById('pw-current').value = '';
+      document.getElementById('pw-new').value = '';
+      showMsg('pw-msg', 'Password changed successfully!', 'success');
+    } catch (err) {
+      showMsg('pw-msg', 'Failed to change password', 'err');
+    }
+  });
+});
+
+function showMsg(id, text, type) {
+  var el = document.getElementById(id);
+  el.textContent = text;
+  el.className = 'profile-msg ' + type;
+}
+
+function hideMsg(id) {
+  var el = document.getElementById(id);
+  el.textContent = '';
+  el.className = 'profile-msg hide';
+}
+
+
 // ========== TAB HELPERS ==========
 
 function switchToTab(tabId) {
