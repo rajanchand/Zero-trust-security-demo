@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Zero Trust Security</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+
+  <!-- LOGIN PAGE -->
+  <div id="login-page" class="page active">
+    <div class="form-card">
+      <div class="icon-circle blue"><i class="fas fa-shield-halved"></i></div>
+      <h1>Zero Trust Security</h1>
+      <p class="muted">Never Trust, Always Verify</p>
+      <form id="login-form">
+        <label>Email</label>
+        <input type="email" id="email" placeholder="Enter your email" required>
+        <label>Password</label>
+        <input type="password" id="password" placeholder="Enter your password" required>
+        <button type="submit" class="btn btn-blue">Sign In</button>
+        <p id="login-error" class="error hide"></p>
+      </form>
+    </div>
+  </div>
+
+  <!-- OTP PAGE -->
+  <div id="otp-page" class="page">
+    <div class="form-card">
+      <div class="icon-circle green"><i class="fas fa-lock"></i></div>
+      <h1>OTP Verification</h1>
+      <p class="muted">A 6-digit code has been generated</p>
+
+      <div class="otp-banner">
+        <small>DEMO OTP</small>
+        <div class="otp-code" id="demo-otp">------</div>
+        <small class="timer">Expires in <strong id="otp-timer">60</strong>s</small>
+      </div>
+
+      <form id="otp-form">
+        <div class="otp-row">
+          <input type="text" maxlength="1" class="otp-input">
+          <input type="text" maxlength="1" class="otp-input">
+          <input type="text" maxlength="1" class="otp-input">
+          <input type="text" maxlength="1" class="otp-input">
+          <input type="text" maxlength="1" class="otp-input">
+          <input type="text" maxlength="1" class="otp-input">
+        </div>
+        <button type="submit" class="btn btn-green">Verify</button>
+        <p id="otp-error" class="error hide"></p>
+      </form>
+      <div class="form-links">
+        <a href="#" id="resend-btn">Resend Code</a>
+        <a href="#" id="back-btn">Back to Login</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADMIN DASHBOARD -->
+  <div id="admin-dashboard" class="page">
+    <header>
+      <div><i class="fas fa-shield-halved blue-text"></i> <strong>Zero Trust</strong> &mdash; Admin</div>
+      <div class="header-right">
+        <span class="user-pill"><i class="fas fa-user-tie"></i> <span id="admin-email"></span></span>
+        <button class="btn btn-small btn-red" id="admin-logout">Logout</button>
+      </div>
+    </header>
+
+    <!-- tabs -->
+    <div class="tab-bar">
+      <button class="tab active" data-tab="tab-home"><i class="fas fa-home"></i> Home</button>
+      <button class="tab" data-tab="tab-users"><i class="fas fa-users-gear"></i> User Management</button>
+    </div>
+
+    <!-- HOME TAB -->
+    <main id="tab-home" class="tab-content active">
+      <h2 id="admin-greeting">Welcome, Admin</h2>
+      <div class="grid-4">
+        <div class="stat-card">
+          <p class="stat-num blue-text" id="stat-total-users">0</p>
+          <p class="stat-label">Total Users</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-num green-text">98.7%</p>
+          <p class="stat-label">Trust Score</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-num orange-text">23</p>
+          <p class="stat-label">Active Threats</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-num red-text">156</p>
+          <p class="stat-label">Blocked Attempts</p>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <h3>Zero Trust Policies</h3>
+          <ul class="simple-list">
+            <li><i class="fas fa-circle-check green-text"></i> Identity Verification <span class="badge green-bg">Active</span></li>
+            <li><i class="fas fa-circle-check green-text"></i> Device Trust Assessment <span class="badge green-bg">Active</span></li>
+            <li><i class="fas fa-circle-check green-text"></i> Micro-Segmentation <span class="badge green-bg">Active</span></li>
+            <li><i class="fas fa-circle-check green-text"></i> Continuous Monitoring <span class="badge green-bg">Active</span></li>
+            <li><i class="fas fa-circle-check green-text"></i> Least Privilege Access <span class="badge green-bg">Active</span></li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Recent Activity</h3>
+          <ul class="simple-list">
+            <li><i class="fas fa-xmark red-text"></i> Failed login — 192.168.1.45 <small>2m ago</small></li>
+            <li><i class="fas fa-check green-text"></i> john.doe passed MFA <small>5m ago</small></li>
+            <li><i class="fas fa-exclamation orange-text"></i> Anomaly on device-0x4F <small>12m ago</small></li>
+            <li><i class="fas fa-check green-text"></i> Policy update deployed <small>25m ago</small></li>
+          </ul>
+        </div>
+      </div>
+    </main>
+
+    <!-- USER MANAGEMENT TAB -->
+    <main id="tab-users" class="tab-content">
+      <h2>User Management</h2>
+
+      <div class="action-bar">
+        <button class="btn btn-blue btn-small" onclick="openModal('create-user-modal')">
+          <i class="fas fa-user-plus"></i> Create User
+        </button>
+        <button class="btn btn-small btn-outline" onclick="openModal('dept-modal')">
+          <i class="fas fa-building"></i> Manage Departments
+        </button>
+      </div>
+
+      <div class="panel">
+        <h3>All Users</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Department</th>
+              <th>Status</th>
+              <th>MFA</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="users-table-body"></tbody>
+        </table>
+      </div>
+    </main>
+
+    <!-- CREATE USER MODAL -->
+    <div class="modal-overlay hide" id="create-user-modal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Create New User</h3>
+          <button class="modal-close" onclick="closeModal('create-user-modal')">&times;</button>
+        </div>
+        <form id="create-user-form">
+          <label>Full Name</label>
+          <input type="text" id="new-name" placeholder="e.g. John Doe" required>
+          <label>Email</label>
+          <input type="email" id="new-email" placeholder="e.g. john@example.com" required>
+          <label>Password</label>
+          <input type="password" id="new-password" placeholder="Set a password" required>
+          <label>Role</label>
+          <select id="new-role">
+            <option value="User">User</option>
+            <option value="Admin">Admin</option>
+            <option value="Manager">Manager</option>
+            <option value="Viewer">Viewer</option>
+          </select>
+          <label>Department</label>
+          <select id="new-dept"></select>
+          <button type="submit" class="btn btn-blue">Create User</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- EDIT USER MODAL -->
+    <div class="modal-overlay hide" id="edit-user-modal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Edit User</h3>
+          <button class="modal-close" onclick="closeModal('edit-user-modal')">&times;</button>
+        </div>
+        <form id="edit-user-form">
+          <label>Full Name</label>
+          <input type="text" id="edit-name" placeholder="Full name" required>
+          <label>Email</label>
+          <input type="email" id="edit-email" placeholder="Email" required>
+          <label>Role</label>
+          <select id="edit-role-select">
+            <option value="User">User</option>
+            <option value="Admin">Admin</option>
+            <option value="Manager">Manager</option>
+            <option value="Viewer">Viewer</option>
+          </select>
+          <label>Department</label>
+          <select id="edit-dept-select"></select>
+          <label>Status</label>
+          <select id="edit-status-select">
+            <option value="Active">Active</option>
+            <option value="Suspended">Suspended</option>
+          </select>
+          <label>
+            <input type="checkbox" id="edit-mfa"> MFA Enabled
+          </label>
+          <button type="submit" class="btn btn-blue">Save Changes</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- MANAGE DEPARTMENTS MODAL -->
+    <div class="modal-overlay hide" id="dept-modal">
+      <div class="modal">
+        <div class="modal-header">
+          <h3>Manage Departments</h3>
+          <button class="modal-close" onclick="closeModal('dept-modal')">&times;</button>
+        </div>
+        <div class="dept-add-row">
+          <input type="text" id="new-dept-name" placeholder="New department name">
+          <button class="btn btn-blue btn-small" onclick="addDepartment()">Add</button>
+        </div>
+        <ul class="simple-list" id="dept-list"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- USER DASHBOARD -->
+  <div id="user-dashboard" class="page">
+    <header class="header-green">
+      <div><i class="fas fa-shield-halved green-text"></i> <strong>Zero Trust</strong> &mdash; Portal</div>
+      <div class="header-right">
+        <span class="user-pill"><i class="fas fa-user"></i> <span id="user-email"></span></span>
+        <button class="btn btn-small btn-red" id="user-logout">Logout</button>
+      </div>
+    </header>
+
+    <main>
+      <h2 id="user-greeting">Welcome</h2>
+      <div class="grid-4">
+        <div class="stat-card">
+          <p class="stat-num blue-text">85%</p>
+          <p class="stat-label">Trust Score</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-num green-text">12</p>
+          <p class="stat-label">Resources</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-num purple-text">Active</p>
+          <p class="stat-label">Session</p>
+        </div>
+        <div class="stat-card">
+          <p class="stat-num orange-text">MFA ✓</p>
+          <p class="stat-label">Verified</p>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="panel">
+          <h3>Security Compliance</h3>
+          <ul class="simple-list">
+            <li><i class="fas fa-circle-check green-text"></i> Multi-Factor Authentication</li>
+            <li><i class="fas fa-circle-check green-text"></i> Device Registration</li>
+            <li><i class="fas fa-circle-check green-text"></i> Password Policy</li>
+            <li><i class="fas fa-circle-exclamation orange-text"></i> Security Training <span class="badge orange-bg">Pending</span></li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Your Resources</h3>
+          <ul class="simple-list">
+            <li><i class="fas fa-file-alt blue-text"></i> Documents <span class="badge green-bg">Access</span></li>
+            <li><i class="fas fa-database blue-text"></i> Database <span class="badge green-bg">Read Only</span></li>
+            <li><i class="fas fa-code blue-text"></i> Source Code <span class="badge green-bg">Read/Write</span></li>
+            <li class="dimmed"><i class="fas fa-server"></i> Server Access <span class="badge red-bg">Denied</span></li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Recent Activity</h3>
+        <ul class="simple-list">
+          <li><i class="fas fa-check green-text"></i> Logged in via MFA <small>Just now</small></li>
+          <li><i class="fas fa-folder blue-text"></i> Accessed Project Files <small>Yesterday</small></li>
+          <li><i class="fas fa-key green-text"></i> Password updated <small>3 days ago</small></li>
+        </ul>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
