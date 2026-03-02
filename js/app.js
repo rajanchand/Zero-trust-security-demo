@@ -292,41 +292,6 @@ document.addEventListener('DOMContentLoaded', function () {
     }
   });
 
-  // ---- TABLE ACTION BUTTONS (using event delegation) ----
-  document.getElementById('users-table-body').addEventListener('click', async function (e) {
-    // find the button — either the target itself or a parent
-    var button = e.target.closest('button[data-action]');
-    if (!button) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    var userId = button.getAttribute('data-id');
-    var action = button.getAttribute('data-action');
-
-    if (!userId || !action) return;
-
-    if (action === 'edit-user') {
-      openEditUser(userId);
-    } else if (action === 'remove-user') {
-      await removeUser(userId);
-    }
-  });
-
-  // ---- DEPARTMENT LIST BUTTONS (using event delegation) ----
-  document.getElementById('dept-list').addEventListener('click', async function (e) {
-    var button = e.target.closest('button[data-action="remove-dept"]');
-    if (!button) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    var deptId = button.getAttribute('data-id');
-    var deptName = button.getAttribute('data-name');
-    if (!deptId) return;
-    await removeDepartment(deptId, deptName);
-  });
-
   // ---- CLOSE MODAL ON OVERLAY CLICK ----
   var overlays = document.querySelectorAll('.modal-overlay');
   for (var m = 0; m < overlays.length; m++) {
@@ -457,8 +422,8 @@ function renderUsersTable() {
     html += '<td><span class="badge ' + statusBadge + '">' + user.status + '</span></td>';
     html += '<td>' + mfaBadge + '</td>';
     html += '<td class="td-actions">';
-    html += '<button class="tbl-btn" data-action="edit-user" data-id="' + user._id + '" title="Edit User"><i class="fas fa-pen"></i></button>';
-    html += '<button class="tbl-btn danger" data-action="remove-user" data-id="' + user._id + '" title="Delete User"><i class="fas fa-trash"></i></button>';
+    html += '<button class="tbl-btn" onclick="openEditUser(\'' + user._id + '\')" title="Edit User"><i class="fas fa-pen"></i></button>';
+    html += '<button class="tbl-btn danger" onclick="removeUser(\'' + user._id + '\')" title="Delete User"><i class="fas fa-trash"></i></button>';
     html += '</td>';
     html += '</tr>';
   }
@@ -507,7 +472,7 @@ function renderDepartmentList() {
     html += '<li>';
     html += '<i class="fas fa-building blue-text"></i> ' + dept.name;
     html += '<span style="margin-left:auto">';
-    html += '<button class="tbl-btn danger" data-action="remove-dept" data-id="' + dept._id + '" data-name="' + dept.name + '">';
+    html += '<button class="tbl-btn danger" onclick="removeDepartment(\'' + dept._id + '\', \'' + dept.name + '\')">';
     html += '<i class="fas fa-trash"></i>';
     html += '</button>';
     html += '</span>';
