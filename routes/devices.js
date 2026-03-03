@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { logEvent } = require('./audit');
 
 // GET /api/devices — list all device approval requests (admin)
 router.get('/', async (req, res) => {
@@ -136,6 +137,13 @@ router.put('/:id/approve', async (req, res) => {
 
     if (error) throw error;
 
+    await logEvent(supabase, {
+      eventType: 'device_approved',
+      severity: 'info',
+      userEmail: data.user_email,
+      details: 'Device approved by ' + (approvedBy || 'Admin') + ' — ' + data.browser
+    });
+
     res.json({ message: 'Device approved', device: data });
   } catch (err) {
     console.error('Approve device error:', err.message);
@@ -162,6 +170,13 @@ router.put('/:id/reject', async (req, res) => {
       .single();
 
     if (error) throw error;
+
+    await logEvent(supabase, {
+      eventType: 'device_rejected',
+      severity: 'warning',
+      userEmail: data.user_email,
+      details: 'Device rejected by ' + (approvedBy || 'Admin') + ' — ' + data.browser
+    });
 
     res.json({ message: 'Device rejected', device: data });
   } catch (err) {

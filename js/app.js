@@ -6,6 +6,13 @@ var allUsers = [];
 var allDevices = [];
 var deviceFilter = 'all';
 var editingUserId = null;
+var allAuditLogs = [];
+var auditFilter = 'all';
+var allSessions = [];
+var sessionFilter = 'all';
+var allIPRules = [];
+var allPolicies = [];
+var sessionTimerInterval = null;
 
 // wait for page to load
 document.addEventListener('DOMContentLoaded', async function () {
@@ -15,31 +22,28 @@ document.addEventListener('DOMContentLoaded', async function () {
   if (savedSession) {
     try {
       currentUser = JSON.parse(savedSession);
-    } catch (e) {
-      sessionStorage.removeItem('zt_session');
-      currentUser = null;
-    }
-
-    if (currentUser && currentUser.email) {
-      try {
-        if (currentUser.role === 'Super Admin' || currentUser.role === 'Admin') {
-          document.getElementById('admin-email').textContent = currentUser.email;
-          document.getElementById('admin-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
-          showPage('admin-dashboard');
-          // load data in background (don't block page show)
-          loadUsers().catch(function () {});
-          loadDepartments().catch(function () {});
-          loadDevices().catch(function () {});
-          setTimeout(updateStats, 500);
-        } else {
-          document.getElementById('user-email').textContent = currentUser.email;
-          document.getElementById('user-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
-          showPage('user-dashboard');
-        }
-      } catch (e) {
-        console.error('Session restore error:', e);
-        // don't clear session — just show login
+      if (currentUser.role === 'Super Admin' || currentUser.role === 'Admin') {
+        document.getElementById('admin-email').textContent = currentUser.email;
+        document.getElementById('admin-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
+        showPage('admin-dashboard');
+        await loadUsers();
+        await loadDepartments();
+        await loadDevices();
+        await loadAuditLogs();
+        await loadSessions();
+        await loadIPRules();
+        await loadPolicies();
+        updateStats();
+        startSessionTimer();
+      } else {
+        document.getElementById('user-email').textContent = currentUser.email;
+        document.getElementById('user-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
+        showPage('user-dashboard');
+        showRiskScore();
+        startSessionTimer();
       }
+    } catch (e) {
+      console.error('Session restore error:', e);
     }
   }
 
@@ -57,17 +61,17 @@ document.addEventListener('DOMContentLoaded', async function () {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email, password: password })
       });
-      var data = await response.json();
+      var result = await response.json();
 
       if (!response.ok) {
-        errorBox.textContent = data.error;
+        errorBox.textContent = result.error || 'Login failed';
         errorBox.classList.remove('hide');
         return;
       }
 
-      // save user info and show OTP page
-      currentUser = { userId: data.userId, name: data.name, role: data.role, email: email };
-      document.getElementById('otp-email-display').textContent = email;
+      // save user info for OTP step
+      currentUser = { userId: result.userId, email: result.email, name: result.name, role: result.role };
+      document.getElementById('otp-email-display').textContent = result.email;
       showPage('otp-page');
       startOtpTimer();
     } catch (err) {
@@ -82,22 +86,14 @@ document.addEventListener('DOMContentLoaded', async function () {
   for (var i = 0; i < otpBoxes.length; i++) {
     (function (index) {
       otpBoxes[index].addEventListener('input', function () {
-        // only allow numbers
         this.value = this.value.replace(/[^0-9]/g, '');
-        // move to next box
-        if (this.value && index < 5) {
+        if (this.value && index < otpBoxes.length - 1) {
           otpBoxes[index + 1].focus();
         }
-        // show green border if filled
-        if (this.value) {
-          this.classList.add('ok');
-        } else {
-          this.classList.remove('ok');
-        }
+        if (this.value) this.classList.add('ok');
+        else this.classList.remove('ok');
       });
-
       otpBoxes[index].addEventListener('keydown', function (e) {
-        // move back on backspace
         if (e.key === 'Backspace' && !this.value && index > 0) {
           otpBoxes[index - 1].focus();
           otpBoxes[index - 1].value = '';
@@ -113,13 +109,11 @@ document.addEventListener('DOMContentLoaded', async function () {
     var errorBox = document.getElementById('otp-error');
     errorBox.classList.add('hide');
 
-    // collect all 6 digits
     var code = '';
     for (var i = 0; i < otpBoxes.length; i++) {
-      code = code + otpBoxes[i].value;
+      code += otpBoxes[i].value;
     }
 
-    // check if all digits entered
     if (code.length < 6) {
       errorBox.textContent = 'Enter all 6 digits.';
       errorBox.classList.remove('hide');
@@ -128,48 +122,37 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     clearInterval(otpTimer);
 
-    // verify with backend
     try {
       var response = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userId: currentUser.userId, code: code })
       });
-      var data = await response.json();
+      var result = await response.json();
 
       if (!response.ok) {
-        errorBox.textContent = data.error || 'Verification failed';
-        errorBox.classList.remove('hide');
-        // shake the boxes and clear them
-        for (var j = 0; j < otpBoxes.length; j++) {
-          otpBoxes[j].classList.add('err');
-          otpBoxes[j].value = '';
+        for (var i = 0; i < otpBoxes.length; i++) {
+          otpBoxes[i].classList.add('err');
+          otpBoxes[i].classList.remove('ok');
         }
-        setTimeout(function () {
-          for (var k = 0; k < otpBoxes.length; k++) {
-            otpBoxes[k].classList.remove('err');
-          }
-        }, 400);
-        otpBoxes[0].focus();
-        startOtpTimer();
-        return;
-      }
-
-      if (!response.ok) {
-        errorBox.textContent = data.error;
+        errorBox.textContent = result.error || 'Verification failed.';
         errorBox.classList.remove('hide');
+        setTimeout(function () {
+          for (var j = 0; j < otpBoxes.length; j++) {
+            otpBoxes[j].classList.remove('err');
+            otpBoxes[j].value = '';
+          }
+          otpBoxes[0].focus();
+        }, 600);
         return;
       }
 
-      currentUser = data.user;
-
-      // save session so refresh doesn't logout
+      // OTP verified — update current user from server response
+      currentUser = result.user;
       sessionStorage.setItem('zt_session', JSON.stringify(currentUser));
 
       // ---- DEVICE APPROVAL CHECK ----
       var deviceInfo = getDeviceInfo();
-
-      // fetch real IP and geo location
       var ipInfo = await fetchIPInfo();
       deviceInfo.ipAddress = ipInfo.ip;
       deviceInfo.geoLocation = ipInfo.geo;
@@ -190,38 +173,40 @@ document.addEventListener('DOMContentLoaded', async function () {
             fingerprint: deviceInfo.fingerprint
           })
         });
-        var devData = await devResponse.json();
+        var devResult = await devResponse.json();
 
-        // Super Admin bypasses device approval
-        if (currentUser.role === 'Super Admin') {
-          // auto-approve for super admin
-        } else if (!devData.approved) {
-          // device not approved — show pending page
+        if (devResult.approved === false && currentUser.role !== 'Super Admin') {
           document.getElementById('pending-ip').textContent = deviceInfo.ipAddress || '—';
           document.getElementById('pending-geo').textContent = deviceInfo.geoLocation || '—';
-          document.getElementById('pending-browser').textContent = deviceInfo.browser || '—';
+          document.getElementById('pending-browser').textContent = deviceInfo.browser + ' (' + deviceInfo.os + ')';
           document.getElementById('pending-health').textContent = deviceInfo.deviceHealth || '—';
           showPage('device-pending-page');
           return;
         }
       } catch (devErr) {
         console.error('Device check error:', devErr);
-        // if device check fails, continue anyway (graceful degradation)
       }
 
-      // show the right dashboard based on role
+      // show the right dashboard
       if (currentUser.role === 'Super Admin' || currentUser.role === 'Admin') {
         document.getElementById('admin-email').textContent = currentUser.email;
         document.getElementById('admin-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
+        showPage('admin-dashboard');
         await loadUsers();
         await loadDepartments();
         await loadDevices();
+        await loadAuditLogs();
+        await loadSessions();
+        await loadIPRules();
+        await loadPolicies();
         updateStats();
-        showPage('admin-dashboard');
+        startSessionTimer();
       } else {
         document.getElementById('user-email').textContent = currentUser.email;
         document.getElementById('user-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
         showPage('user-dashboard');
+        showRiskScore();
+        startSessionTimer();
       }
     } catch (err) {
       errorBox.textContent = 'Verification failed.';
@@ -235,35 +220,22 @@ document.addEventListener('DOMContentLoaded', async function () {
     if (!currentUser || !currentUser.email) return;
 
     this.textContent = 'Sending...';
-    this.style.pointerEvents = 'none';
-
     try {
-      var response = await fetch('/api/auth/resend-otp', {
+      await fetch('/api/auth/resend-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: currentUser.email })
       });
-      var data = await response.json();
-
-      if (response.ok) {
-        startOtpTimer();
-        document.getElementById('otp-error').classList.add('hide');
-      } else {
-        var errorBox = document.getElementById('otp-error');
-        errorBox.textContent = data.error || 'Failed to resend';
-        errorBox.classList.remove('hide');
-      }
+      this.textContent = 'Code Resent ✓';
+      startOtpTimer();
     } catch (err) {
-      var errorBox2 = document.getElementById('otp-error');
-      errorBox2.textContent = 'Failed to resend OTP';
-      errorBox2.classList.remove('hide');
+      this.textContent = 'Failed. Try again.';
     }
-
-    this.textContent = 'Resend Code';
-    this.style.pointerEvents = 'auto';
+    var self = this;
+    setTimeout(function () { self.textContent = 'Resend Code'; }, 3000);
   });
 
-  // ---- BACK TO LOGIN ----
+  // back to login
   document.getElementById('back-btn').addEventListener('click', function (e) {
     e.preventDefault();
     clearInterval(otpTimer);
@@ -278,16 +250,10 @@ document.addEventListener('DOMContentLoaded', async function () {
   var tabs = document.querySelectorAll('.tab');
   for (var t = 0; t < tabs.length; t++) {
     tabs[t].addEventListener('click', function () {
-      // remove active from all tabs
       var allTabs = document.querySelectorAll('.tab');
+      for (var x = 0; x < allTabs.length; x++) allTabs[x].classList.remove('active');
       var allContent = document.querySelectorAll('.tab-content');
-      for (var x = 0; x < allTabs.length; x++) {
-        allTabs[x].classList.remove('active');
-      }
-      for (var y = 0; y < allContent.length; y++) {
-        allContent[y].classList.remove('active');
-      }
-      // activate clicked tab
+      for (var y = 0; y < allContent.length; y++) allContent[y].classList.remove('active');
       this.classList.add('active');
       document.getElementById(this.dataset.tab).classList.add('active');
     });
@@ -300,26 +266,18 @@ document.addEventListener('DOMContentLoaded', async function () {
     var email = document.getElementById('new-email').value.trim();
     var password = document.getElementById('new-password').value;
     var role = document.getElementById('new-role').value;
-    var department = document.getElementById('new-dept').value;
-
-    if (!name || !email || !password) return;
+    var dept = document.getElementById('new-dept').value;
 
     try {
       var response = await fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name,
-          email: email,
-          password: password,
-          role: role,
-          department: department
-        })
+        body: JSON.stringify({ name: name, email: email, password: password, role: role, department: dept })
       });
-      var data = await response.json();
 
       if (!response.ok) {
-        alert(data.error);
+        var err = await response.json();
+        alert(err.error || 'Failed');
         return;
       }
 
@@ -338,32 +296,20 @@ document.addEventListener('DOMContentLoaded', async function () {
     var name = document.getElementById('edit-name').value.trim();
     var email = document.getElementById('edit-email').value.trim();
     var role = document.getElementById('edit-role-select').value;
-    var department = document.getElementById('edit-dept-select').value;
+    var dept = document.getElementById('edit-dept-select').value;
     var status = document.getElementById('edit-status-select').value;
     var mfa = document.getElementById('edit-mfa').checked;
-
-    if (!name || !email) {
-      alert('Name and email are required');
-      return;
-    }
 
     try {
       var response = await fetch('/api/users/' + editingUserId, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name,
-          email: email,
-          role: role,
-          department: department,
-          status: status,
-          mfa: mfa
-        })
+        body: JSON.stringify({ name: name, email: email, role: role, department: dept, status: status, mfa: mfa })
       });
-      var data = await response.json();
 
       if (!response.ok) {
-        alert(data.error || 'Failed to update user');
+        var err = await response.json();
+        alert(err.error || 'Failed');
         return;
       }
 
@@ -377,367 +323,23 @@ document.addEventListener('DOMContentLoaded', async function () {
 
   // ---- CLOSE MODAL ON OVERLAY CLICK ----
   var overlays = document.querySelectorAll('.modal-overlay');
-  for (var m = 0; m < overlays.length; m++) {
-    overlays[m].addEventListener('click', function (e) {
+  for (var o = 0; o < overlays.length; o++) {
+    overlays[o].addEventListener('click', function (e) {
       if (e.target === this) {
         this.classList.add('hide');
       }
     });
   }
-});
 
-
-// ========== HELPER FUNCTIONS ==========
-
-// show a page by id
-function showPage(pageId) {
-  var pages = document.querySelectorAll('.page');
-  for (var i = 0; i < pages.length; i++) {
-    pages[i].classList.remove('active');
-  }
-  document.getElementById(pageId).classList.add('active');
-}
-
-// start 60 second OTP countdown
-function startOtpTimer() {
-  var seconds = 60;
-  var timerDisplay = document.getElementById('otp-timer');
-  timerDisplay.textContent = seconds;
-
-  if (otpTimer) clearInterval(otpTimer);
-
-  // clear and reset OTP input boxes
-  var boxes = document.querySelectorAll('.otp-input');
-  for (var i = 0; i < boxes.length; i++) {
-    boxes[i].value = '';
-    boxes[i].className = 'otp-input';
-  }
-  boxes[0].focus();
-
-  otpTimer = setInterval(function () {
-    seconds--;
-    timerDisplay.textContent = seconds;
-    if (seconds <= 0) {
-      clearInterval(otpTimer);
-      var errorBox = document.getElementById('otp-error');
-      errorBox.textContent = 'OTP expired. Click Resend Code.';
-      errorBox.classList.remove('hide');
-    }
-  }, 1000);
-}
-
-// logout and go back to login
-function logout() {
-  clearInterval(otpTimer);
-  currentUser = null;
-  otp = null;
-  sessionStorage.removeItem('zt_session');
-  document.getElementById('email').value = '';
-  document.getElementById('password').value = '';
-  document.getElementById('login-error').classList.add('hide');
-
-  // reset tabs to home
-  var tabs = document.querySelectorAll('.tab');
-  var contents = document.querySelectorAll('.tab-content');
-  for (var i = 0; i < tabs.length; i++) {
-    tabs[i].classList.remove('active');
-  }
-  for (var j = 0; j < contents.length; j++) {
-    contents[j].classList.remove('active');
-  }
-  document.querySelector('.tab[data-tab="tab-home"]').classList.add('active');
-  document.getElementById('tab-home').classList.add('active');
-
-  showPage('login-page');
-}
-
-
-// ========== DATA LOADING ==========
-
-// load all users from the server
-async function loadUsers() {
-  try {
-    var response = await fetch('/api/users');
-    allUsers = await response.json();
-    renderUsersTable();
-  } catch (err) {
-    console.error('Failed to load users', err);
-  }
-}
-
-// load all departments from the server
-async function loadDepartments() {
-  try {
-    var response = await fetch('/api/departments');
-    departments = await response.json();
-    fillDepartmentDropdowns();
-    renderDepartmentList();
-  } catch (err) {
-    console.error('Failed to load departments', err);
-  }
-}
-
-
-// ========== RENDERING ==========
-
-// draw the users table
-function renderUsersTable() {
-  var tbody = document.getElementById('users-table-body');
-  var html = '';
-
-  for (var i = 0; i < allUsers.length; i++) {
-    var user = allUsers[i];
-
-    // pick badge color based on role
-    var roleBadge = 'blue-bg';
-    if (user.role === 'Admin') roleBadge = 'purple-bg';
-    if (user.role === 'Manager') roleBadge = 'orange-bg';
-
-    // pick status badge color
-    var statusBadge = user.status === 'Active' ? 'green-bg' : 'red-bg';
-
-    // mfa badge
-    var mfaBadge = user.mfa ? '<span class="badge green-bg">On</span>' : '<span class="badge red-bg">Off</span>';
-
-    html += '<tr>';
-    html += '<td>' + user.name + '</td>';
-    html += '<td>' + user.email + '</td>';
-    html += '<td><span class="badge ' + roleBadge + '">' + user.role + '</span></td>';
-    html += '<td>' + user.department + '</td>';
-    html += '<td><span class="badge ' + statusBadge + '">' + user.status + '</span></td>';
-    html += '<td>' + mfaBadge + '</td>';
-    html += '<td class="td-actions">';
-    html += '<button class="tbl-btn" onclick="openEditUser(\'' + user._id + '\')" title="Edit User"><i class="fas fa-pen"></i></button>';
-    html += '<button class="tbl-btn danger" onclick="removeUser(\'' + user._id + '\')" title="Delete User"><i class="fas fa-trash"></i></button>';
-    html += '</td>';
-    html += '</tr>';
-  }
-
-  tbody.innerHTML = html;
-}
-
-// update the total users count on dashboard
-function updateStats() {
-  var el = document.getElementById('stat-total-users');
-  if (el) {
-    el.textContent = allUsers.length;
-  }
-  updateDeviceStats();
-}
-
-// fill department dropdown options (both create and edit modals)
-function fillDepartmentDropdowns() {
-  var html = '';
-  for (var i = 0; i < departments.length; i++) {
-    html += '<option value="' + departments[i].name + '">' + departments[i].name + '</option>';
-  }
-
-  var createSelect = document.getElementById('new-dept');
-  if (createSelect) {
-    createSelect.innerHTML = html;
-  }
-
-  var editSelect = document.getElementById('edit-dept-select');
-  if (editSelect) {
-    var previousValue = editSelect.value;
-    editSelect.innerHTML = html;
-    // restore previously selected value if still available
-    if (previousValue) {
-      editSelect.value = previousValue;
-    }
-  }
-}
-
-// draw the department list in the modal
-function renderDepartmentList() {
-  var list = document.getElementById('dept-list');
-  var html = '';
-
-  for (var i = 0; i < departments.length; i++) {
-    var dept = departments[i];
-    html += '<li>';
-    html += '<i class="fas fa-building blue-text"></i> ' + dept.name;
-    html += '<span style="margin-left:auto">';
-    html += '<button class="tbl-btn danger" onclick="removeDepartment(\'' + dept._id + '\', \'' + dept.name + '\')">';
-    html += '<i class="fas fa-trash"></i>';
-    html += '</button>';
-    html += '</span>';
-    html += '</li>';
-  }
-
-  list.innerHTML = html;
-}
-
-
-// ========== USER ACTIONS ==========
-
-// open the full edit user modal
-function openEditUser(userId) {
-  var user = null;
-  for (var i = 0; i < allUsers.length; i++) {
-    if (allUsers[i]._id === userId) {
-      user = allUsers[i];
-      break;
-    }
-  }
-  if (!user) return;
-
-  editingUserId = userId;
-
-  // fill the form with current values
-  document.getElementById('edit-name').value = user.name;
-  document.getElementById('edit-email').value = user.email;
-  document.getElementById('edit-role-select').value = user.role;
-  document.getElementById('edit-status-select').value = user.status;
-  document.getElementById('edit-mfa').checked = user.mfa;
-
-  // fill department dropdown
-  var deptSelect = document.getElementById('edit-dept-select');
-  var deptHtml = '';
-  for (var j = 0; j < departments.length; j++) {
-    deptHtml += '<option value="' + departments[j].name + '">' + departments[j].name + '</option>';
-  }
-  deptSelect.innerHTML = deptHtml;
-  deptSelect.value = user.department;
-
-  openModal('edit-user-modal');
-}
-
-// remove a user
-async function removeUser(userId) {
-  var user = null;
-  for (var i = 0; i < allUsers.length; i++) {
-    if (allUsers[i]._id === userId) {
-      user = allUsers[i];
-      break;
-    }
-  }
-  if (!user) {
-    console.error('removeUser: user not found in allUsers for id', userId);
-    return;
-  }
-
-  if (!confirm('Remove user "' + user.name + '" (' + user.email + ')?')) return;
-
-  try {
-    var response = await fetch('/api/users/' + userId, { method: 'DELETE' });
-    var data = await response.json();
-
-    if (response.ok) {
-      await loadUsers();
-      updateStats();
-    } else {
-      alert(data.error || 'Failed to remove user');
-      console.error('Delete failed:', data);
-    }
-  } catch (err) {
-    alert('Failed to remove user');
-    console.error('Delete error:', err);
-  }
-}
-
-
-// ========== DEPARTMENT ACTIONS ==========
-
-// add a new department
-async function addDepartment() {
-  var input = document.getElementById('new-dept-name');
-  var name = input.value.trim();
-  if (!name) return;
-
-  try {
-    var response = await fetch('/api/departments', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name })
-    });
-    var data = await response.json();
-
-    if (!response.ok) {
-      alert(data.error);
-      return;
-    }
-
-    input.value = '';
-    await loadDepartments();
-  } catch (err) {
-    alert('Failed to add department');
-  }
-}
-
-// remove a department
-async function removeDepartment(deptId, deptName) {
-  // check if any user is in this department
-  var inUse = false;
-  for (var i = 0; i < allUsers.length; i++) {
-    if (allUsers[i].department === deptName) {
-      inUse = true;
-      break;
-    }
-  }
-
-  if (inUse) {
-    alert('Cannot remove "' + deptName + '" because it is assigned to users. Change their department first.');
-    return;
-  }
-
-  if (!confirm('Remove department "' + deptName + '"?')) return;
-
-  try {
-    var response = await fetch('/api/departments/' + deptId, { method: 'DELETE' });
-    var data = await response.json();
-
-    if (response.ok) {
-      await loadDepartments();
-    } else {
-      alert(data.error || 'Failed to remove department');
-    }
-  } catch (err) {
-    alert('Failed to remove department');
-  }
-}
-
-
-// ========== PROFILE ==========
-
-function openProfileModal() {
-  if (!currentUser || !currentUser._id) return;
-
-  // fill the modal with current user data
-  document.getElementById('profile-avatar-letter').textContent = (currentUser.name || '?')[0].toUpperCase();
-  document.getElementById('profile-display-name').textContent = currentUser.name;
-  document.getElementById('profile-display-role').textContent = currentUser.role + ' — ' + currentUser.department;
-  document.getElementById('profile-name').value = currentUser.name || '';
-  document.getElementById('profile-email').value = currentUser.email || '';
-  document.getElementById('profile-phone').value = currentUser.phone || '';
-  document.getElementById('profile-gender').value = currentUser.gender || '';
-  document.getElementById('profile-department').value = currentUser.department || '';
-  document.getElementById('profile-status').value = currentUser.status || '';
-
-  // clear password fields and messages
-  document.getElementById('pw-current').value = '';
-  document.getElementById('pw-new').value = '';
-  hideMsg('profile-msg');
-  hideMsg('pw-msg');
-
-  openModal('profile-modal');
-}
-
-// save profile (name, phone, gender)
-document.addEventListener('DOMContentLoaded', function () {
-
+  // ---- PROFILE FORM ----
   document.getElementById('profile-form').addEventListener('submit', async function (e) {
     e.preventDefault();
-    hideMsg('profile-msg');
+    var msgBox = document.getElementById('profile-msg');
+    msgBox.classList.add('hide');
 
     var name = document.getElementById('profile-name').value.trim();
     var phone = document.getElementById('profile-phone').value.trim();
     var gender = document.getElementById('profile-gender').value;
-
-    if (!name) {
-      showMsg('profile-msg', 'Name is required', 'err');
-      return;
-    }
 
     try {
       var response = await fetch('/api/auth/profile/' + currentUser._id, {
@@ -745,49 +347,47 @@ document.addEventListener('DOMContentLoaded', function () {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: name, phone: phone, gender: gender })
       });
-      var data = await response.json();
+      var result = await response.json();
 
       if (!response.ok) {
-        showMsg('profile-msg', data.error || 'Update failed', 'err');
+        msgBox.textContent = result.error || 'Failed to update';
+        msgBox.className = 'profile-msg err';
         return;
       }
 
-      // update local user data
-      currentUser.name = data.user.name;
-      currentUser.phone = data.user.phone;
-      currentUser.gender = data.user.gender;
-
-      // update header and greeting
-      document.getElementById('profile-avatar-letter').textContent = currentUser.name[0].toUpperCase();
+      currentUser.name = result.user.name;
+      currentUser.phone = result.user.phone;
+      currentUser.gender = result.user.gender;
+      sessionStorage.setItem('zt_session', JSON.stringify(currentUser));
       document.getElementById('profile-display-name').textContent = currentUser.name;
+      document.getElementById('profile-avatar-letter').textContent = currentUser.name.charAt(0).toUpperCase();
 
-      if (currentUser.role === 'Super Admin') {
+      if (currentUser.role === 'Super Admin' || currentUser.role === 'Admin') {
         document.getElementById('admin-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
       } else {
         document.getElementById('user-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
       }
 
-      showMsg('profile-msg', 'Profile updated successfully!', 'success');
+      msgBox.textContent = 'Profile updated ✓';
+      msgBox.className = 'profile-msg success';
     } catch (err) {
-      showMsg('profile-msg', 'Failed to update profile', 'err');
+      msgBox.textContent = 'Server error';
+      msgBox.className = 'profile-msg err';
     }
   });
 
-  // change password
+  // ---- PASSWORD FORM ----
   document.getElementById('password-form').addEventListener('submit', async function (e) {
     e.preventDefault();
-    hideMsg('pw-msg');
+    var msgBox = document.getElementById('pw-msg');
+    msgBox.classList.add('hide');
 
-    var currentPw = document.getElementById('pw-current').value;
+    var current = document.getElementById('pw-current').value;
     var newPw = document.getElementById('pw-new').value;
 
-    if (!currentPw || !newPw) {
-      showMsg('pw-msg', 'Both fields are required', 'err');
-      return;
-    }
-
-    if (newPw.length < 8) {
-      showMsg('pw-msg', 'New password must be at least 8 characters', 'err');
+    if (newPw.length < 6) {
+      msgBox.textContent = 'Password must be at least 6 characters';
+      msgBox.className = 'profile-msg err';
       return;
     }
 
@@ -795,215 +395,282 @@ document.addEventListener('DOMContentLoaded', function () {
       var response = await fetch('/api/auth/profile/' + currentUser._id, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw })
+        body: JSON.stringify({ currentPassword: current, newPassword: newPw })
       });
-      var data = await response.json();
+      var result = await response.json();
 
       if (!response.ok) {
-        showMsg('pw-msg', data.error || 'Password change failed', 'err');
+        msgBox.textContent = result.error || 'Failed';
+        msgBox.className = 'profile-msg err';
         return;
       }
 
-      document.getElementById('pw-current').value = '';
-      document.getElementById('pw-new').value = '';
-      showMsg('pw-msg', 'Password changed successfully!', 'success');
+      msgBox.textContent = 'Password updated ✓';
+      msgBox.className = 'profile-msg success';
+      document.getElementById('password-form').reset();
     } catch (err) {
-      showMsg('pw-msg', 'Failed to change password', 'err');
+      msgBox.textContent = 'Server error';
+      msgBox.className = 'profile-msg err';
     }
   });
-});
 
-function showMsg(id, text, type) {
-  var el = document.getElementById(id);
-  el.textContent = text;
-  el.className = 'profile-msg ' + type;
+}); // end DOMContentLoaded
+
+// ========== HELPER FUNCTIONS ==========
+
+function showPage(id) {
+  var pages = document.querySelectorAll('.page');
+  for (var i = 0; i < pages.length; i++) pages[i].classList.remove('active');
+  document.getElementById(id).classList.add('active');
 }
 
-function hideMsg(id) {
-  var el = document.getElementById(id);
-  el.textContent = '';
-  el.className = 'profile-msg hide';
+function openModal(id) {
+  document.getElementById(id).classList.remove('hide');
 }
 
+function closeModal(id) {
+  document.getElementById(id).classList.add('hide');
+}
 
-// ========== TAB HELPERS ==========
+function logout() {
+  currentUser = null;
+  clearInterval(sessionTimerInterval);
+  sessionStorage.removeItem('zt_session');
+  showPage('login-page');
+  document.getElementById('login-form').reset();
+}
 
 function switchToTab(tabId) {
-  // deactivate all tabs and content
   var allTabs = document.querySelectorAll('.tab');
+  for (var x = 0; x < allTabs.length; x++) allTabs[x].classList.remove('active');
   var allContent = document.querySelectorAll('.tab-content');
-  for (var i = 0; i < allTabs.length; i++) {
-    allTabs[i].classList.remove('active');
-  }
-  for (var j = 0; j < allContent.length; j++) {
-    allContent[j].classList.remove('active');
-  }
-  // activate the target tab and content
-  var tabButton = document.querySelector('.tab[data-tab="' + tabId + '"]');
-  if (tabButton) tabButton.classList.add('active');
-  var tabContent = document.getElementById(tabId);
-  if (tabContent) tabContent.classList.add('active');
+  for (var y = 0; y < allContent.length; y++) allContent[y].classList.remove('active');
+
+  var btn = document.querySelector('.tab[data-tab="' + tabId + '"]');
+  if (btn) btn.classList.add('active');
+  document.getElementById(tabId).classList.add('active');
 }
 
-
-// ========== MODAL HELPERS ==========
-
-function openModal(modalId) {
-  document.getElementById(modalId).classList.remove('hide');
-  if (modalId === 'dept-modal') renderDepartmentList();
-  if (modalId === 'create-user-modal') fillDepartmentDropdowns();
+function startOtpTimer() {
+  var secs = 60;
+  document.getElementById('otp-timer').textContent = secs;
+  clearInterval(otpTimer);
+  otpTimer = setInterval(function () {
+    secs--;
+    document.getElementById('otp-timer').textContent = secs;
+    if (secs <= 0) clearInterval(otpTimer);
+  }, 1000);
 }
 
-function closeModal(modalId) {
-  document.getElementById(modalId).classList.add('hide');
+function formatDate(d) {
+  if (!d) return '—';
+  var dt = new Date(d);
+  return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ' ' + dt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
-
-// ========== DEVICE INFO & FINGERPRINT ==========
-
+// ========== DEVICE INFO ==========
 function getDeviceInfo() {
   var ua = navigator.userAgent;
-
-  // browser detection
   var browser = 'Unknown';
-  if (ua.indexOf('Firefox') > -1) browser = 'Firefox';
-  else if (ua.indexOf('Edg') > -1) browser = 'Microsoft Edge';
-  else if (ua.indexOf('Chrome') > -1) browser = 'Chrome';
-  else if (ua.indexOf('Safari') > -1) browser = 'Safari';
-  else if (ua.indexOf('Opera') > -1 || ua.indexOf('OPR') > -1) browser = 'Opera';
-
-  // OS detection
   var os = 'Unknown';
+
+  if (ua.indexOf('Chrome') > -1 && ua.indexOf('Edg') === -1) browser = 'Chrome';
+  else if (ua.indexOf('Firefox') > -1) browser = 'Firefox';
+  else if (ua.indexOf('Safari') > -1 && ua.indexOf('Chrome') === -1) browser = 'Safari';
+  else if (ua.indexOf('Edg') > -1) browser = 'Edge';
+
   if (ua.indexOf('Windows') > -1) os = 'Windows';
   else if (ua.indexOf('Mac') > -1) os = 'macOS';
   else if (ua.indexOf('Linux') > -1) os = 'Linux';
   else if (ua.indexOf('Android') > -1) os = 'Android';
   else if (ua.indexOf('iPhone') > -1 || ua.indexOf('iPad') > -1) os = 'iOS';
 
-  // device health assessment
+  var isSecure = location.protocol === 'https:';
+  var hasCookies = navigator.cookieEnabled;
   var health = 'Good';
-  if (!window.isSecureContext) health = 'Poor — Not HTTPS';
-  else if (navigator.cookieEnabled === false) health = 'Fair — Cookies Disabled';
+  if (!isSecure) health = 'Poor — Not HTTPS';
+  else if (!hasCookies) health = 'Fair — Cookies disabled';
 
-  // simple fingerprint from browser properties
-  var fingerprint = generateFingerprint();
+  var fingerprint = btoa(ua + screen.width + screen.height + navigator.language + (new Date()).getTimezoneOffset()).substring(0, 32);
 
   return {
     browser: browser + ' (' + os + ')',
     os: os,
     deviceHealth: health,
-    ipAddress: '',  // will be filled by geolocation API
-    geoLocation: '', // will be filled by geolocation API
-    fingerprint: fingerprint
+    fingerprint: fingerprint,
+    ipAddress: '',
+    geoLocation: ''
   };
 }
 
-function generateFingerprint() {
-  var components = [
-    navigator.userAgent,
-    navigator.language,
-    screen.width + 'x' + screen.height,
-    screen.colorDepth,
-    new Date().getTimezoneOffset(),
-    navigator.hardwareConcurrency || 'unknown',
-    navigator.platform || 'unknown'
-  ];
-  // simple hash
-  var str = components.join('|');
-  var hash = 0;
-  for (var i = 0; i < str.length; i++) {
-    var char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // convert to 32-bit integer
-  }
-  return 'DEV-' + Math.abs(hash).toString(16).toUpperCase();
-}
-
-// fetch IP and geo location from free API
 async function fetchIPInfo() {
   try {
-    var response = await fetch('https://ipapi.co/json/');
-    var data = await response.json();
-    return {
-      ip: data.ip || '',
-      geo: (data.city || '') + ', ' + (data.region || '') + ', ' + (data.country_name || '')
-    };
-  } catch (err) {
-    return { ip: 'Unknown', geo: 'Unknown' };
+    var r = await fetch('https://ipapi.co/json/');
+    var d = await r.json();
+    return { ip: d.ip || '', geo: (d.city || '') + ', ' + (d.region || '') + ', ' + (d.country_name || '') };
+  } catch (e) {
+    return { ip: '', geo: '' };
   }
 }
 
+// ========== DATA LOADING ==========
+async function loadUsers() {
+  try {
+    var r = await fetch('/api/users');
+    allUsers = await r.json();
+    renderUsersTable();
+  } catch (e) { console.error('Load users failed:', e); }
+}
 
-// ========== DEVICE APPROVALS (ADMIN) ==========
+function renderUsersTable() {
+  var tbody = document.getElementById('users-table-body');
+  if (!tbody) return;
+  if (!allUsers.length) { tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#94a3b8">No users found</td></tr>'; return; }
 
+  var html = '';
+  for (var i = 0; i < allUsers.length; i++) {
+    var u = allUsers[i];
+    var statusClass = u.status === 'Active' ? 'green-bg' : 'red-bg';
+    var mfaBadge = u.mfa ? '<span class="badge green-bg">On</span>' : '<span class="badge red-bg">Off</span>';
+    html += '<tr>'
+      + '<td><strong>' + u.name + '</strong></td>'
+      + '<td>' + u.email + '</td>'
+      + '<td><span class="badge blue-bg">' + u.role + '</span></td>'
+      + '<td>' + (u.department || '—') + '</td>'
+      + '<td><span class="badge ' + statusClass + '">' + u.status + '</span></td>'
+      + '<td>' + mfaBadge + '</td>'
+      + '<td class="td-actions">'
+      + '<button class="tbl-btn" onclick="editUser(\'' + u._id + '\')"><i class="fas fa-pen"></i></button>'
+      + '<button class="tbl-btn danger" onclick="deleteUser(\'' + u._id + '\')"><i class="fas fa-trash"></i></button>'
+      + '</td></tr>';
+  }
+  tbody.innerHTML = html;
+}
+
+function editUser(id) {
+  var u = allUsers.find(function (x) { return x._id === id; });
+  if (!u) return;
+  editingUserId = id;
+  document.getElementById('edit-name').value = u.name;
+  document.getElementById('edit-email').value = u.email;
+  document.getElementById('edit-role-select').value = u.role;
+  document.getElementById('edit-status-select').value = u.status;
+  document.getElementById('edit-mfa').checked = u.mfa;
+
+  var deptSel = document.getElementById('edit-dept-select');
+  deptSel.innerHTML = '';
+  for (var i = 0; i < departments.length; i++) {
+    deptSel.innerHTML += '<option value="' + departments[i].name + '"' + (departments[i].name === u.department ? ' selected' : '') + '>' + departments[i].name + '</option>';
+  }
+  openModal('edit-user-modal');
+}
+
+async function deleteUser(id) {
+  if (!confirm('Delete this user?')) return;
+  try {
+    await fetch('/api/users/' + id, { method: 'DELETE' });
+    await loadUsers();
+    updateStats();
+  } catch (e) { alert('Failed to delete user'); }
+}
+
+// ---- Departments ----
+async function loadDepartments() {
+  try {
+    var r = await fetch('/api/departments');
+    departments = await r.json();
+    renderDeptList();
+    populateDeptDropdowns();
+  } catch (e) { console.error('Load departments failed:', e); }
+}
+
+function renderDeptList() {
+  var list = document.getElementById('dept-list');
+  if (!list) return;
+  list.innerHTML = '';
+  for (var i = 0; i < departments.length; i++) {
+    list.innerHTML += '<li>' + departments[i].name + '<button class="tbl-btn danger" style="margin-left:auto" onclick="deleteDepartment(\'' + departments[i]._id + '\')"><i class="fas fa-trash"></i></button></li>';
+  }
+}
+
+function populateDeptDropdowns() {
+  var dd = [document.getElementById('new-dept')];
+  for (var d = 0; d < dd.length; d++) {
+    if (!dd[d]) continue;
+    dd[d].innerHTML = '';
+    for (var i = 0; i < departments.length; i++) {
+      dd[d].innerHTML += '<option value="' + departments[i].name + '">' + departments[i].name + '</option>';
+    }
+  }
+}
+
+async function addDepartment() {
+  var name = document.getElementById('new-dept-name').value.trim();
+  if (!name) return;
+  try {
+    var r = await fetch('/api/departments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name }) });
+    if (!r.ok) { var e = await r.json(); alert(e.error); return; }
+    document.getElementById('new-dept-name').value = '';
+    await loadDepartments();
+  } catch (e) { alert('Failed'); }
+}
+
+async function deleteDepartment(id) {
+  if (!confirm('Delete this department?')) return;
+  try {
+    await fetch('/api/departments/' + id, { method: 'DELETE' });
+    await loadDepartments();
+  } catch (e) { alert('Failed'); }
+}
+
+// ---- Devices ----
 async function loadDevices() {
   try {
-    var response = await fetch('/api/devices');
-    allDevices = await response.json();
+    var r = await fetch('/api/devices');
+    allDevices = await r.json();
     renderDevicesTable();
     updateDeviceStats();
-  } catch (err) {
-    console.error('Failed to load devices', err);
-  }
+  } catch (e) { console.error('Load devices failed:', e); }
 }
 
 function renderDevicesTable() {
   var tbody = document.getElementById('devices-table-body');
   if (!tbody) return;
-  var html = '';
 
   var filtered = allDevices;
   if (deviceFilter !== 'all') {
-    filtered = [];
-    for (var i = 0; i < allDevices.length; i++) {
-      if (allDevices[i].status === deviceFilter) {
-        filtered.push(allDevices[i]);
-      }
-    }
+    filtered = allDevices.filter(function (d) { return d.status === deviceFilter; });
   }
 
-  if (filtered.length === 0) {
-    html = '<tr><td colspan="9" style="text-align:center;color:#94a3b8;padding:32px;">No device requests found</td></tr>';
-    tbody.innerHTML = html;
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#94a3b8">No device requests found</td></tr>';
     return;
   }
 
-  for (var j = 0; j < filtered.length; j++) {
-    var d = filtered[j];
-
-    var statusBadge = 'orange-bg';
-    if (d.status === 'Approved') statusBadge = 'green-bg';
-    if (d.status === 'Rejected') statusBadge = 'red-bg';
-
-    var healthBadge = 'green-bg';
-    if (d.device_health && d.device_health.indexOf('Fair') > -1) healthBadge = 'orange-bg';
-    if (d.device_health && d.device_health.indexOf('Poor') > -1) healthBadge = 'red-bg';
-
-    var dateStr = d.created_at ? new Date(d.created_at).toLocaleString() : '—';
-    var approvedBy = d.approved_by || '—';
-
-    html += '<tr>';
-    html += '<td><strong>' + (d.user_name || '—') + '</strong><br><small class="muted">' + (d.user_email || '') + '</small></td>';
-    html += '<td><code>' + (d.ip_address || '—') + '</code></td>';
-    html += '<td>' + (d.geo_location || '—') + '</td>';
-    html += '<td><span class="badge ' + healthBadge + '">' + (d.device_health || 'Unknown') + '</span></td>';
-    html += '<td>' + (d.browser || '—') + '</td>';
-    html += '<td><span class="badge ' + statusBadge + '">' + d.status + '</span></td>';
-    html += '<td>' + approvedBy + '</td>';
-    html += '<td><small>' + dateStr + '</small></td>';
-    html += '<td class="td-actions">';
-
+  var html = '';
+  for (var i = 0; i < filtered.length; i++) {
+    var d = filtered[i];
+    var statusClass = d.status === 'Approved' ? 'green-bg' : d.status === 'Rejected' ? 'red-bg' : 'orange-bg';
+    var healthClass = (d.device_health || '').indexOf('Poor') > -1 ? 'red-bg' : (d.device_health || '').indexOf('Fair') > -1 ? 'orange-bg' : 'green-bg';
+    var actions = '';
     if (d.status === 'Pending') {
-      html += '<button class="tbl-btn success" onclick="approveDevice(\'' + d.id + '\')" title="Approve"><i class="fas fa-check"></i></button>';
-      html += '<button class="tbl-btn danger" onclick="rejectDevice(\'' + d.id + '\')" title="Reject"><i class="fas fa-times"></i></button>';
-    } else {
-      html += '<button class="tbl-btn danger" onclick="deleteDevice(\'' + d.id + '\')" title="Delete"><i class="fas fa-trash"></i></button>';
+      actions = '<button class="tbl-btn success" onclick="approveDevice(\'' + d.id + '\')"><i class="fas fa-check"></i></button>'
+        + '<button class="tbl-btn danger" onclick="rejectDevice(\'' + d.id + '\')"><i class="fas fa-times"></i></button>';
     }
+    actions += '<button class="tbl-btn danger" onclick="deleteDevice(\'' + d.id + '\')"><i class="fas fa-trash"></i></button>';
 
-    html += '</td>';
-    html += '</tr>';
+    html += '<tr>'
+      + '<td><strong>' + (d.user_name || '—') + '</strong><br><small style="color:#94a3b8">' + (d.user_email || '') + '</small></td>'
+      + '<td><code>' + (d.ip_address || '—') + '</code></td>'
+      + '<td>' + (d.geo_location || '—') + '</td>'
+      + '<td><span class="badge ' + healthClass + '">' + (d.device_health || '—') + '</span></td>'
+      + '<td>' + (d.browser || '—') + '</td>'
+      + '<td><span class="badge ' + statusClass + '">' + d.status + '</span></td>'
+      + '<td>' + (d.approved_by || '—') + '</td>'
+      + '<td>' + formatDate(d.created_at) + '</td>'
+      + '<td class="td-actions">' + actions + '</td>'
+      + '</tr>';
   }
-
   tbody.innerHTML = html;
 }
 
@@ -1018,108 +685,428 @@ function updateDeviceStats() {
 
 function filterDevices(status) {
   deviceFilter = status;
-
-  // update filter buttons
-  var btns = document.querySelectorAll('.filter-btn');
-  for (var i = 0; i < btns.length; i++) {
-    btns[i].classList.remove('active');
-  }
-  event.target.classList.add('active');
-
   renderDevicesTable();
+  var btns = document.querySelectorAll('#tab-devices .filter-btn');
+  for (var i = 0; i < btns.length; i++) btns[i].classList.remove('active');
+  event.target.classList.add('active');
 }
 
 async function approveDevice(deviceId) {
   if (!confirm('Approve this device?')) return;
   try {
-    var response = await fetch('/api/devices/' + deviceId + '/approve', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ approvedBy: currentUser.email })
-    });
-    if (response.ok) {
-      await loadDevices();
-    } else {
-      var data = await response.json();
-      alert(data.error || 'Failed to approve');
-    }
-  } catch (err) {
-    alert('Failed to approve device');
-  }
+    await fetch('/api/devices/' + deviceId + '/approve', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approvedBy: currentUser.email }) });
+    await loadDevices();
+  } catch (e) { alert('Failed'); }
 }
 
 async function rejectDevice(deviceId) {
   if (!confirm('Reject this device?')) return;
   try {
-    var response = await fetch('/api/devices/' + deviceId + '/reject', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ approvedBy: currentUser.email })
-    });
-    if (response.ok) {
-      await loadDevices();
-    } else {
-      var data = await response.json();
-      alert(data.error || 'Failed to reject');
-    }
-  } catch (err) {
-    alert('Failed to reject device');
-  }
+    await fetch('/api/devices/' + deviceId + '/reject', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approvedBy: currentUser.email }) });
+    await loadDevices();
+  } catch (e) { alert('Failed'); }
 }
 
 async function deleteDevice(deviceId) {
   if (!confirm('Delete this device record?')) return;
   try {
-    var response = await fetch('/api/devices/' + deviceId, { method: 'DELETE' });
-    if (response.ok) {
-      await loadDevices();
-    } else {
-      alert('Failed to delete device record');
-    }
-  } catch (err) {
-    alert('Failed to delete device record');
-  }
+    await fetch('/api/devices/' + deviceId, { method: 'DELETE' });
+    await loadDevices();
+  } catch (e) { alert('Failed'); }
 }
 
-// user checks if their device has been approved
 async function checkDeviceApproval() {
   if (!currentUser) return;
-
-  var msgEl = document.getElementById('device-pending-msg');
-  msgEl.textContent = 'Checking...';
-  msgEl.className = 'profile-msg';
-
-  var fingerprint = generateFingerprint();
-
+  var deviceInfo = getDeviceInfo();
   try {
-    var response = await fetch('/api/devices/check/' + currentUser._id + '/' + fingerprint);
-    var data = await response.json();
+    var r = await fetch('/api/devices/check/' + currentUser._id + '/' + deviceInfo.fingerprint);
+    var result = await r.json();
+    var msgBox = document.getElementById('device-pending-msg');
 
-    if (data.approved) {
-      msgEl.textContent = 'Device approved! Redirecting...';
-      msgEl.className = 'profile-msg success';
+    if (result.approved) {
+      msgBox.textContent = 'Device approved! Redirecting...';
+      msgBox.className = 'profile-msg success';
 
       setTimeout(function () {
-        if (currentUser.role === 'Admin') {
+        if (currentUser.role === 'Super Admin' || currentUser.role === 'Admin') {
           document.getElementById('admin-email').textContent = currentUser.email;
           document.getElementById('admin-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
-          loadUsers();
-          loadDepartments();
-          loadDevices();
-          updateStats();
           showPage('admin-dashboard');
+          loadUsers(); loadDepartments(); loadDevices(); loadAuditLogs(); loadSessions(); loadIPRules(); loadPolicies();
+          updateStats();
+          startSessionTimer();
         } else {
           document.getElementById('user-email').textContent = currentUser.email;
           document.getElementById('user-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
           showPage('user-dashboard');
+          showRiskScore();
+          startSessionTimer();
         }
-      }, 1500);
+      }, 1000);
     } else {
-      msgEl.textContent = 'Still pending. Please wait for admin approval.';
-      msgEl.className = 'profile-msg err';
+      msgBox.textContent = 'Device is still pending approval. Please wait.';
+      msgBox.className = 'profile-msg err';
     }
-  } catch (err) {
-    msgEl.textContent = 'Failed to check status';
-    msgEl.className = 'profile-msg err';
+  } catch (e) {
+    console.error('Check device error:', e);
   }
+}
+
+// ========== AUDIT LOGS ==========
+async function loadAuditLogs() {
+  try {
+    var r = await fetch('/api/audit');
+    allAuditLogs = await r.json();
+    renderAuditTable();
+    updateAuditStats();
+  } catch (e) { console.error('Load audit logs failed:', e); }
+}
+
+function renderAuditTable() {
+  var tbody = document.getElementById('audit-table-body');
+  if (!tbody) return;
+
+  var filtered = allAuditLogs;
+  if (auditFilter !== 'all') {
+    filtered = allAuditLogs.filter(function (a) { return a.severity === auditFilter; });
+  }
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#94a3b8">No audit logs found</td></tr>';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < filtered.length; i++) {
+    var a = filtered[i];
+    var sevClass = a.severity === 'critical' ? 'red-bg' : a.severity === 'warning' ? 'orange-bg' : 'blue-bg';
+    var sevIcon = a.severity === 'critical' ? 'fa-circle-exclamation' : a.severity === 'warning' ? 'fa-triangle-exclamation' : 'fa-circle-info';
+    var eventLabel = (a.event_type || '').replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+
+    html += '<tr>'
+      + '<td><span class="badge ' + sevClass + '"><i class="fas ' + sevIcon + '"></i> ' + a.severity + '</span></td>'
+      + '<td><strong>' + eventLabel + '</strong></td>'
+      + '<td>' + (a.user_email || '—') + '</td>'
+      + '<td><code>' + (a.ip_address || '—') + '</code></td>'
+      + '<td>' + (a.details || '—') + '</td>'
+      + '<td>' + formatDate(a.created_at) + '</td>'
+      + '</tr>';
+  }
+  tbody.innerHTML = html;
+}
+
+function filterAudit(severity) {
+  auditFilter = severity;
+  renderAuditTable();
+  var btns = document.querySelectorAll('#tab-audit .filter-btn');
+  for (var i = 0; i < btns.length; i++) btns[i].classList.remove('active');
+  event.target.classList.add('active');
+}
+
+function updateAuditStats() {
+  var warnings = 0;
+  var critical = 0;
+  var now = Date.now();
+  for (var i = 0; i < allAuditLogs.length; i++) {
+    var age = now - new Date(allAuditLogs[i].created_at).getTime();
+    if (age < 24 * 60 * 60 * 1000) {
+      if (allAuditLogs[i].severity === 'warning') warnings++;
+      if (allAuditLogs[i].severity === 'critical') critical++;
+    }
+  }
+  var wEl = document.getElementById('stat-audit-warnings');
+  var cEl = document.getElementById('stat-audit-critical');
+  if (wEl) wEl.textContent = warnings;
+  if (cEl) cEl.textContent = critical;
+}
+
+// ========== SESSIONS ==========
+async function loadSessions() {
+  try {
+    var r = await fetch('/api/sessions');
+    allSessions = await r.json();
+    renderSessionsTable();
+    updateSessionStats();
+  } catch (e) { console.error('Load sessions failed:', e); }
+}
+
+function renderSessionsTable() {
+  var tbody = document.getElementById('sessions-table-body');
+  if (!tbody) return;
+
+  var filtered = allSessions;
+  if (sessionFilter === 'active') {
+    filtered = allSessions.filter(function (s) { return s.is_active && new Date(s.expires_at) > new Date(); });
+  } else if (sessionFilter === 'expired') {
+    filtered = allSessions.filter(function (s) { return !s.is_active || new Date(s.expires_at) <= new Date(); });
+  }
+
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#94a3b8">No sessions found</td></tr>';
+    return;
+  }
+
+  var html = '';
+  for (var i = 0; i < filtered.length; i++) {
+    var s = filtered[i];
+    var isActive = s.is_active && new Date(s.expires_at) > new Date();
+    var statusBadge = isActive ? '<span class="badge green-bg"><i class="fas fa-circle"></i> Active</span>' : '<span class="badge red-bg">Expired</span>';
+
+    if (s.revoked_by) statusBadge = '<span class="badge red-bg"><i class="fas fa-ban"></i> Revoked</span>';
+
+    var actions = '';
+    if (isActive) {
+      actions = '<button class="tbl-btn danger" onclick="revokeSession(\'' + s.id + '\')"><i class="fas fa-ban"></i> Revoke</button>';
+    }
+
+    html += '<tr>'
+      + '<td><strong>' + (s.user_name || '—') + '</strong><br><small style="color:#94a3b8">' + (s.user_email || '') + '</small></td>'
+      + '<td><code>' + (s.ip_address || '—') + '</code></td>'
+      + '<td>' + (s.geo_location || '—') + '</td>'
+      + '<td>' + (s.browser || '—') + '</td>'
+      + '<td>' + formatDate(s.created_at) + '</td>'
+      + '<td>' + formatDate(s.expires_at) + '</td>'
+      + '<td>' + statusBadge + '</td>'
+      + '<td class="td-actions">' + actions + '</td>'
+      + '</tr>';
+  }
+  tbody.innerHTML = html;
+}
+
+function filterSessions(status) {
+  sessionFilter = status;
+  renderSessionsTable();
+  var btns = document.querySelectorAll('#tab-sessions .filter-btn');
+  for (var i = 0; i < btns.length; i++) btns[i].classList.remove('active');
+  event.target.classList.add('active');
+}
+
+function updateSessionStats() {
+  var active = 0;
+  for (var i = 0; i < allSessions.length; i++) {
+    if (allSessions[i].is_active && new Date(allSessions[i].expires_at) > new Date()) active++;
+  }
+  var el = document.getElementById('stat-active-sessions');
+  if (el) el.textContent = active;
+}
+
+async function revokeSession(sessionId) {
+  if (!confirm('Revoke this session?')) return;
+  try {
+    await fetch('/api/sessions/' + sessionId + '/revoke', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ revokedBy: currentUser.email })
+    });
+    await loadSessions();
+  } catch (e) { alert('Failed'); }
+}
+
+// ========== IP RULES ==========
+async function loadIPRules() {
+  try {
+    var r = await fetch('/api/ip-rules');
+    allIPRules = await r.json();
+    renderIPRules();
+  } catch (e) { console.error('Load IP rules failed:', e); }
+}
+
+function renderIPRules() {
+  var allowList = document.getElementById('allow-ip-list');
+  var blockList = document.getElementById('block-ip-list');
+  if (!allowList || !blockList) return;
+
+  var allowHTML = '';
+  var blockHTML = '';
+
+  for (var i = 0; i < allIPRules.length; i++) {
+    var rule = allIPRules[i];
+    var item = '<li><i class="fas ' + (rule.rule_type === 'allow' ? 'fa-shield-check green-text' : 'fa-ban red-text') + '"></i> '
+      + '<code>' + rule.ip_pattern + '</code>'
+      + (rule.label ? ' <small style="color:#94a3b8">' + rule.label + '</small>' : '')
+      + '<button class="tbl-btn danger" style="margin-left:auto" onclick="deleteIPRule(\'' + rule.id + '\')"><i class="fas fa-trash"></i></button>'
+      + '</li>';
+
+    if (rule.rule_type === 'allow') allowHTML += item;
+    else blockHTML += item;
+  }
+
+  allowList.innerHTML = allowHTML || '<li style="color:#94a3b8">No allowlist rules</li>';
+  blockList.innerHTML = blockHTML || '<li style="color:#94a3b8">No blocklist rules</li>';
+}
+
+async function addIPRule(type) {
+  var ipInput = document.getElementById(type + '-ip-input');
+  var labelInput = document.getElementById(type + '-ip-label');
+  var ip = ipInput.value.trim();
+  var label = labelInput.value.trim();
+
+  if (!ip) { alert('Enter an IP address or pattern'); return; }
+
+  try {
+    var r = await fetch('/api/ip-rules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip_pattern: ip, rule_type: type, label: label, created_by: currentUser.email })
+    });
+    if (!r.ok) { var e = await r.json(); alert(e.error); return; }
+    ipInput.value = '';
+    labelInput.value = '';
+    await loadIPRules();
+  } catch (e) { alert('Failed'); }
+}
+
+async function deleteIPRule(id) {
+  if (!confirm('Delete this IP rule?')) return;
+  try {
+    await fetch('/api/ip-rules/' + id, { method: 'DELETE' });
+    await loadIPRules();
+  } catch (e) { alert('Failed'); }
+}
+
+// ========== SECURITY POLICIES ==========
+async function loadPolicies() {
+  try {
+    var r = await fetch('/api/policies');
+    allPolicies = await r.json();
+    renderPolicies();
+  } catch (e) { console.error('Load policies failed:', e); }
+}
+
+function renderPolicies() {
+  var panel = document.getElementById('policies-panel');
+  if (!panel) return;
+
+  var policyConfig = {
+    'session_timeout_minutes': { icon: 'fa-clock', label: 'Session Timeout (min)', type: 'number' },
+    'max_failed_logins': { icon: 'fa-lock', label: 'Max Failed Logins', type: 'number' },
+    'mfa_required': { icon: 'fa-shield-halved', label: 'MFA Required', type: 'toggle' },
+    'password_min_length': { icon: 'fa-key', label: 'Min Password Length', type: 'number' },
+    'device_approval_required': { icon: 'fa-laptop-medical', label: 'Device Approval Required', type: 'toggle' },
+    'ip_restriction_enabled': { icon: 'fa-globe', label: 'IP Restriction Enabled', type: 'toggle' }
+  };
+
+  var html = '';
+  for (var i = 0; i < allPolicies.length; i++) {
+    var p = allPolicies[i];
+    var cfg = policyConfig[p.policy_key] || { icon: 'fa-cog', label: p.policy_key, type: 'text' };
+
+    if (cfg.type === 'toggle') {
+      var isOn = p.policy_value === 'true';
+      html += '<div class="policy-item">'
+        + '<div class="policy-info"><i class="fas ' + cfg.icon + ' blue-text"></i> <span>' + cfg.label + '</span></div>'
+        + '<label class="toggle-switch"><input type="checkbox" ' + (isOn ? 'checked' : '') + ' onchange="updatePolicy(\'' + p.policy_key + '\', this.checked ? \'true\' : \'false\')"><span class="toggle-slider"></span></label>'
+        + '</div>';
+    } else {
+      html += '<div class="policy-item">'
+        + '<div class="policy-info"><i class="fas ' + cfg.icon + ' blue-text"></i> <span>' + cfg.label + '</span></div>'
+        + '<input type="number" class="policy-input" value="' + p.policy_value + '" onchange="updatePolicy(\'' + p.policy_key + '\', this.value)" min="1" max="999">'
+        + '</div>';
+    }
+  }
+
+  panel.innerHTML = html || '<p class="muted">No policies found. Run migrate_features.sql in Supabase.</p>';
+}
+
+async function updatePolicy(key, value) {
+  try {
+    var r = await fetch('/api/policies/' + key, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: value, updatedBy: currentUser.email })
+    });
+    if (!r.ok) { var e = await r.json(); alert(e.error); return; }
+    await loadPolicies();
+  } catch (e) { alert('Failed to update policy'); }
+}
+
+// ========== RISK SCORE DISPLAY ==========
+function showRiskScore() {
+  if (!currentUser || !currentUser.riskScore) return;
+
+  var score = currentUser.riskScore;
+  var el = document.getElementById('risk-score-number');
+  var gauge = document.getElementById('risk-gauge-fill');
+  var factorsList = document.getElementById('risk-factors-list');
+
+  if (el) el.textContent = score;
+  if (gauge) {
+    gauge.style.width = score + '%';
+    gauge.className = 'risk-gauge-fill';
+    if (score >= 70) gauge.classList.add('good');
+    else if (score >= 40) gauge.classList.add('medium');
+    else gauge.classList.add('bad');
+  }
+
+  if (factorsList && currentUser.riskFactors) {
+    var html = '';
+    for (var i = 0; i < currentUser.riskFactors.length; i++) {
+      var f = currentUser.riskFactors[i];
+      var icon = f.impact === 0 ? 'fa-circle-check green-text' : 'fa-circle-minus red-text';
+      html += '<div class="risk-factor"><i class="fas ' + icon + '"></i> ' + f.factor + ': ' + f.detail + '</div>';
+    }
+    factorsList.innerHTML = html;
+  }
+}
+
+// ========== SESSION TIMER ==========
+function startSessionTimer() {
+  if (!currentUser || !currentUser.sessionExpiresAt) return;
+
+  var timerPill = document.getElementById(currentUser.role === 'Super Admin' || currentUser.role === 'Admin' ? 'session-timer-pill' : 'user-session-timer-pill');
+  var timerText = document.getElementById(currentUser.role === 'Super Admin' || currentUser.role === 'Admin' ? 'session-timer-text' : 'user-session-timer-text');
+
+  if (!timerPill || !timerText) return;
+  timerPill.classList.remove('hide');
+
+  clearInterval(sessionTimerInterval);
+  sessionTimerInterval = setInterval(function () {
+    var remaining = new Date(currentUser.sessionExpiresAt).getTime() - Date.now();
+
+    if (remaining <= 0) {
+      clearInterval(sessionTimerInterval);
+      timerText.textContent = 'EXPIRED';
+      timerPill.classList.add('expired');
+      alert('Session expired. Please log in again.');
+      logout();
+      return;
+    }
+
+    var mins = Math.floor(remaining / 60000);
+    var secs = Math.floor((remaining % 60000) / 1000);
+    timerText.textContent = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+
+    // warning at 5 minutes
+    if (remaining < 5 * 60 * 1000) {
+      timerPill.classList.add('warning');
+    }
+  }, 1000);
+}
+
+// ========== STATS UPDATE ==========
+function updateStats() {
+  var el = document.getElementById('stat-total-users');
+  if (el) el.textContent = allUsers.length;
+  updateDeviceStats();
+  updateAuditStats();
+  updateSessionStats();
+}
+
+// ========== PROFILE MODAL ==========
+function openProfileModal() {
+  if (!currentUser) return;
+
+  document.getElementById('profile-display-name').textContent = currentUser.name;
+  document.getElementById('profile-display-role').textContent = currentUser.role + ' • ' + (currentUser.department || 'General');
+  document.getElementById('profile-avatar-letter').textContent = currentUser.name.charAt(0).toUpperCase();
+  document.getElementById('profile-name').value = currentUser.name;
+  document.getElementById('profile-email').value = currentUser.email;
+  document.getElementById('profile-phone').value = currentUser.phone || '';
+  document.getElementById('profile-gender').value = currentUser.gender || '';
+  document.getElementById('profile-department').value = currentUser.department || '';
+  document.getElementById('profile-status').value = currentUser.status || '';
+
+  document.getElementById('profile-msg').classList.add('hide');
+  document.getElementById('pw-msg').classList.add('hide');
+  openModal('profile-modal');
 }

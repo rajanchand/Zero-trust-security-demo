@@ -64,6 +64,9 @@
     <header>
       <div><i class="fas fa-shield-halved blue-text"></i> <strong>Zero Trust</strong> &mdash; Admin</div>
       <div class="header-right">
+        <div class="session-timer-pill hide" id="session-timer-pill" title="Session expires">
+          <i class="fas fa-clock"></i> <span id="session-timer-text">30:00</span>
+        </div>
         <span class="user-pill" onclick="openProfileModal()" style="cursor:pointer" title="View Profile"><i class="fas fa-user-tie"></i> <span id="admin-email"></span></span>
         <button class="btn btn-small btn-red" id="admin-logout">Logout</button>
       </div>
@@ -74,6 +77,9 @@
       <button class="tab active" data-tab="tab-home"><i class="fas fa-home"></i> Home</button>
       <button class="tab" data-tab="tab-users"><i class="fas fa-users-gear"></i> User Management</button>
       <button class="tab" data-tab="tab-devices"><i class="fas fa-laptop-medical"></i> Device Approvals</button>
+      <button class="tab" data-tab="tab-audit"><i class="fas fa-scroll"></i> Audit Logs</button>
+      <button class="tab" data-tab="tab-sessions"><i class="fas fa-network-wired"></i> Sessions</button>
+      <button class="tab" data-tab="tab-access"><i class="fas fa-globe-lock"></i> Access Policies</button>
     </div>
 
     <!-- HOME TAB -->
@@ -85,24 +91,33 @@
           <p class="stat-label">Total Users</p>
           <small class="stat-hint">Click to manage</small>
         </div>
-        <div class="stat-card">
-          <p class="stat-num green-text">98.7%</p>
-          <p class="stat-label">Trust Score</p>
+        <div class="stat-card clickable" onclick="switchToTab('tab-sessions')">
+          <p class="stat-num green-text" id="stat-active-sessions">0</p>
+          <p class="stat-label">Active Sessions</p>
+          <small class="stat-hint">Click to manage</small>
         </div>
-        <div class="stat-card clickable" onclick="openModal('threats-modal')">
-          <p class="stat-num orange-text" id="stat-threats">23</p>
-          <p class="stat-label">Active Threats</p>
-          <small class="stat-hint">Click for details</small>
+        <div class="stat-card clickable" onclick="switchToTab('tab-audit')">
+          <p class="stat-num orange-text" id="stat-audit-warnings">0</p>
+          <p class="stat-label">Warnings (24h)</p>
+          <small class="stat-hint">Click for logs</small>
         </div>
-        <div class="stat-card clickable" onclick="openModal('blocked-modal')">
-          <p class="stat-num red-text" id="stat-blocked">156</p>
-          <p class="stat-label">Blocked Attempts</p>
+        <div class="stat-card clickable" onclick="switchToTab('tab-audit')">
+          <p class="stat-num red-text" id="stat-audit-critical">0</p>
+          <p class="stat-label">Critical Events</p>
           <small class="stat-hint">Click for details</small>
         </div>
         <div class="stat-card clickable" onclick="switchToTab('tab-devices')">
           <p class="stat-num purple-text" id="stat-pending-devices">0</p>
           <p class="stat-label">Pending Devices</p>
           <small class="stat-hint">Click to review</small>
+        </div>
+      </div>
+
+      <!-- Security Policies Quick View -->
+      <div class="panel">
+        <h3><i class="fas fa-sliders"></i> Security Policies</h3>
+        <div id="policies-panel" class="policies-grid">
+          <p class="muted">Loading policies...</p>
         </div>
       </div>
     </main>
@@ -169,6 +184,96 @@
             </thead>
             <tbody id="devices-table-body"></tbody>
           </table>
+        </div>
+      </div>
+    </main>
+
+    <!-- AUDIT LOGS TAB -->
+    <main id="tab-audit" class="tab-content">
+      <h2><i class="fas fa-scroll"></i> Audit Logs</h2>
+      <p class="muted">Complete security event trail. Every action is logged and timestamped for compliance.</p>
+
+      <div class="device-filter-bar">
+        <button class="filter-btn active" onclick="filterAudit('all')">All</button>
+        <button class="filter-btn" onclick="filterAudit('info')"><i class="fas fa-circle-info blue-text"></i> Info</button>
+        <button class="filter-btn" onclick="filterAudit('warning')"><i class="fas fa-triangle-exclamation orange-text"></i> Warning</button>
+        <button class="filter-btn" onclick="filterAudit('critical')"><i class="fas fa-circle-exclamation red-text"></i> Critical</button>
+      </div>
+
+      <div class="panel">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Severity</th>
+                <th>Event</th>
+                <th>User</th>
+                <th>IP Address</th>
+                <th>Details</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody id="audit-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <!-- SESSIONS TAB -->
+    <main id="tab-sessions" class="tab-content">
+      <h2><i class="fas fa-network-wired"></i> Active Sessions</h2>
+      <p class="muted">Monitor and manage all active user sessions. Revoke suspicious sessions immediately.</p>
+
+      <div class="device-filter-bar">
+        <button class="filter-btn active" onclick="filterSessions('all')">All</button>
+        <button class="filter-btn" onclick="filterSessions('active')"><i class="fas fa-circle green-text"></i> Active</button>
+        <button class="filter-btn" onclick="filterSessions('expired')"><i class="fas fa-circle red-text"></i> Expired/Revoked</button>
+      </div>
+
+      <div class="panel">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>IP Address</th>
+                <th>Location</th>
+                <th>Browser</th>
+                <th>Created</th>
+                <th>Expires</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="sessions-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+
+    <!-- ACCESS POLICIES TAB -->
+    <main id="tab-access" class="tab-content">
+      <h2><i class="fas fa-globe-lock"></i> Access Policies</h2>
+      <p class="muted">Manage IP allowlist and blocklist rules. Control network-level access to the application.</p>
+
+      <div class="grid-2">
+        <div class="panel">
+          <h3><i class="fas fa-shield-check green-text"></i> IP Allowlist</h3>
+          <div class="dept-add-row">
+            <input type="text" id="allow-ip-input" placeholder="e.g. 192.168.1.*">
+            <input type="text" id="allow-ip-label" placeholder="Label" style="width:120px">
+            <button class="btn btn-small btn-green" style="margin-top:0" onclick="addIPRule('allow')">Add</button>
+          </div>
+          <ul class="simple-list" id="allow-ip-list"></ul>
+        </div>
+        <div class="panel">
+          <h3><i class="fas fa-ban red-text"></i> IP Blocklist</h3>
+          <div class="dept-add-row">
+            <input type="text" id="block-ip-input" placeholder="e.g. 10.0.0.*">
+            <input type="text" id="block-ip-label" placeholder="Label" style="width:120px">
+            <button class="btn btn-small btn-red" style="margin-top:0" onclick="addIPRule('block')">Add</button>
+          </div>
+          <ul class="simple-list" id="block-ip-list"></ul>
         </div>
       </div>
     </main>
@@ -249,46 +354,6 @@
         <ul class="simple-list" id="dept-list"></ul>
       </div>
     </div>
-
-    <!-- ACTIVE THREATS MODAL -->
-    <div class="modal-overlay hide" id="threats-modal">
-      <div class="modal">
-        <div class="modal-header">
-          <h3><i class="fas fa-exclamation-triangle orange-text"></i> Active Threats</h3>
-          <button class="modal-close" onclick="closeModal('threats-modal')">&times;</button>
-        </div>
-        <ul class="simple-list">
-          <li><i class="fas fa-exclamation-circle red-text"></i> Brute force attack from 192.168.1.45 <span class="badge red-bg">Critical</span></li>
-          <li><i class="fas fa-exclamation-circle orange-text"></i> Suspicious login from unknown device <span class="badge orange-bg">High</span></li>
-          <li><i class="fas fa-exclamation-circle orange-text"></i> Multiple failed MFA attempts — user bob@example.com <span class="badge orange-bg">High</span></li>
-          <li><i class="fas fa-exclamation-circle orange-text"></i> Anomalous API access pattern detected <span class="badge orange-bg">High</span></li>
-          <li><i class="fas fa-exclamation-circle blue-text"></i> Outdated TLS version on device-0x4F <span class="badge blue-bg">Medium</span></li>
-          <li><i class="fas fa-exclamation-circle blue-text"></i> Unregistered device connection attempt <span class="badge blue-bg">Medium</span></li>
-          <li><i class="fas fa-exclamation-circle blue-text"></i> Session token reuse detected <span class="badge blue-bg">Medium</span></li>
-        </ul>
-        <p class="muted" style="margin-top:14px;text-align:center;">Showing 7 of 23 active threats</p>
-      </div>
-    </div>
-
-    <!-- BLOCKED ATTEMPTS MODAL -->
-    <div class="modal-overlay hide" id="blocked-modal">
-      <div class="modal">
-        <div class="modal-header">
-          <h3><i class="fas fa-ban red-text"></i> Blocked Attempts</h3>
-          <button class="modal-close" onclick="closeModal('blocked-modal')">&times;</button>
-        </div>
-        <ul class="simple-list">
-          <li><i class="fas fa-xmark red-text"></i> 192.168.1.45 — Brute force (32 attempts) <small>2m ago</small></li>
-          <li><i class="fas fa-xmark red-text"></i> 10.0.0.88 — Invalid credentials <small>5m ago</small></li>
-          <li><i class="fas fa-xmark red-text"></i> 172.16.0.12 — Expired session token <small>8m ago</small></li>
-          <li><i class="fas fa-xmark red-text"></i> 203.0.113.5 — Geo-location policy violation <small>15m ago</small></li>
-          <li><i class="fas fa-xmark red-text"></i> 198.51.100.3 — Unregistered device <small>22m ago</small></li>
-          <li><i class="fas fa-xmark red-text"></i> 192.168.2.10 — Failed MFA verification <small>30m ago</small></li>
-          <li><i class="fas fa-xmark red-text"></i> 10.0.1.55 — Access denied — insufficient role <small>45m ago</small></li>
-        </ul>
-        <p class="muted" style="margin-top:14px;text-align:center;">Showing 7 of 156 blocked attempts</p>
-      </div>
-    </div>
   </div>
 
   <!-- USER DASHBOARD -->
@@ -296,6 +361,9 @@
     <header class="header-green">
       <div><i class="fas fa-shield-halved green-text"></i> <strong>Zero Trust</strong> &mdash; Portal</div>
       <div class="header-right">
+        <div class="session-timer-pill hide" id="user-session-timer-pill" title="Session expires">
+          <i class="fas fa-clock"></i> <span id="user-session-timer-text">30:00</span>
+        </div>
         <span class="user-pill" onclick="openProfileModal()" style="cursor:pointer" title="View Profile"><i class="fas fa-user"></i> <span id="user-email"></span></span>
         <button class="btn btn-small btn-red" id="user-logout">Logout</button>
       </div>
@@ -303,11 +371,22 @@
 
     <main>
       <h2 id="user-greeting">Welcome</h2>
-      <div class="grid-4">
-        <div class="stat-card">
-          <p class="stat-num blue-text">85%</p>
-          <p class="stat-label">Trust Score</p>
+
+      <!-- Risk Score Card -->
+      <div class="risk-score-card" id="risk-score-card">
+        <div class="risk-gauge">
+          <div class="risk-gauge-fill" id="risk-gauge-fill" style="width:0%"></div>
         </div>
+        <div class="risk-score-row">
+          <div>
+            <span class="risk-score-number" id="risk-score-number">—</span>
+            <span class="risk-score-label">Trust Score</span>
+          </div>
+          <div class="risk-factors" id="risk-factors-list"></div>
+        </div>
+      </div>
+
+      <div class="grid-4">
         <div class="stat-card">
           <p class="stat-num green-text">12</p>
           <p class="stat-label">Resources</p>

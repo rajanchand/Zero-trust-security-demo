@@ -84,6 +84,10 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/departments', require('./routes/departments'));
 app.use('/api/devices', require('./routes/devices'));
+app.use('/api/audit', require('./routes/audit'));
+app.use('/api/sessions', require('./routes/sessions'));
+app.use('/api/ip-rules', require('./routes/ip-rules'));
+app.use('/api/policies', require('./routes/policies'));
 
 // global error handler
 app.use(function (err, _req, res, _next) {

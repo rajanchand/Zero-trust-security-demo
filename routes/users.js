@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
+const { logEvent } = require('./audit');
 
 // helper: map supabase row to front-end shape (id -> _id)
 function mapUser(row) {
@@ -72,6 +73,14 @@ router.post('/', async (req, res) => {
       .single();
 
     if (error) throw error;
+
+    await logEvent(supabase, {
+      eventType: 'user_created',
+      severity: 'info',
+      userEmail: data.email,
+      details: 'New user created: ' + data.name + ' (' + data.role + ')'
+    });
+
     res.status(201).json(mapUser(data));
   } catch (err) {
     res.status(500).json({ error: err.message || 'Server error' });
@@ -123,6 +132,13 @@ router.put('/:id', async (req, res) => {
     if (error) throw error;
     if (!data) return res.status(404).json({ error: 'User not found' });
 
+    await logEvent(supabase, {
+      eventType: 'user_updated',
+      severity: 'info',
+      userEmail: data.email,
+      details: 'User updated: ' + Object.keys(updates).join(', ')
+    });
+
     res.json(mapUser(data));
   } catch (err) {
     res.status(500).json({ error: err.message || 'Server error' });
@@ -148,6 +164,12 @@ router.delete('/:id', async (req, res) => {
     if (!data || data.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
+
+    await logEvent(supabase, {
+      eventType: 'user_deleted',
+      severity: 'warning',
+      details: 'User deleted: ' + id
+    });
 
     res.json({ message: 'User removed' });
   } catch (err) {

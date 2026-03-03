@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const nodemailer = require('nodemailer');
+const { logEvent } = require('./audit');
+const { checkIP } = require('./ip-rules');
+const { getPolicy } = require('./policies');
 
 // Gmail transporter – uses App Password (not regular password)
 var transporter = nodemailer.createTransport({
@@ -16,37 +19,115 @@ var transporter = nodemailer.createTransport({
 
 // send OTP email helper
 async function sendOtpEmail(toEmail, otpCode) {
-  var mailOptions = {
+  await transporter.sendMail({
     from: '"Zero Trust Security" <' + process.env.GMAIL_USER + '>',
     to: toEmail,
-    subject: 'Your OTP Verification Code',
-    html: '<div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:24px;border:1px solid #e0e0e0;border-radius:12px;">' +
-      '<div style="text-align:center;margin-bottom:16px;">' +
-      '<div style="background:#4F6EF7;color:#fff;width:48px;height:48px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:24px;">🔐</div>' +
-      '</div>' +
-      '<h2 style="text-align:center;color:#1a1a2e;">OTP Verification</h2>' +
-      '<p style="text-align:center;color:#666;">Your one-time password for Zero Trust Security login:</p>' +
-      '<div style="text-align:center;margin:24px 0;">' +
-      '<span style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#4F6EF7;background:#f0f4ff;padding:12px 24px;border-radius:8px;display:inline-block;">' + otpCode + '</span>' +
-      '</div>' +
-      '<p style="text-align:center;color:#999;font-size:13px;">This code expires in <strong>60 seconds</strong>. Do not share it with anyone.</p>' +
-      '<hr style="border:none;border-top:1px solid #eee;margin:20px 0;">' +
-      '<p style="text-align:center;color:#aaa;font-size:11px;">Zero Trust Security &mdash; Never Trust, Always Verify</p>' +
-      '</div>'
-  };
-
-  await transporter.sendMail(mailOptions);
+    subject: 'Your Login OTP Code — ' + otpCode,
+    html: '<div style="font-family:sans-serif;max-width:400px;margin:0 auto;text-align:center;padding:30px">'
+      + '<h2 style="color:#1e40af">Zero Trust Security</h2>'
+      + '<p style="color:#64748b">Your one-time verification code is:</p>'
+      + '<div style="font-size:36px;font-weight:800;letter-spacing:8px;color:#1e40af;'
+      + 'background:#f0f9ff;border-radius:12px;padding:20px;margin:20px 0">'
+      + otpCode + '</div>'
+      + '<p style="color:#94a3b8;font-size:13px">This code expires in 60 seconds.<br>Do not share it with anyone.</p>'
+      + '</div>'
+  });
 }
+
+// ========== RISK SCORE ENGINE ==========
+function calculateRiskScore(opts) {
+  var score = 100; // start at max trust
+  var factors = [];
+
+  // 1. Device health (-20 for poor, -10 for fair)
+  if (opts.deviceHealth) {
+    if (opts.deviceHealth.indexOf('Poor') > -1) {
+      score -= 20;
+      factors.push({ factor: 'Device Health', impact: -20, detail: 'Not HTTPS' });
+    } else if (opts.deviceHealth.indexOf('Fair') > -1) {
+      score -= 10;
+      factors.push({ factor: 'Device Health', impact: -10, detail: 'Cookies disabled' });
+    } else {
+      factors.push({ factor: 'Device Health', impact: 0, detail: 'Good' });
+    }
+  }
+
+  // 2. Known IP (-15 if different from last login)
+  if (opts.lastLoginIp && opts.currentIp && opts.lastLoginIp !== opts.currentIp) {
+    score -= 15;
+    factors.push({ factor: 'IP Address', impact: -15, detail: 'Different from last login' });
+  } else {
+    factors.push({ factor: 'IP Address', impact: 0, detail: 'Consistent' });
+  }
+
+  // 3. Failed login count (-5 per failure, max -25)
+  if (opts.failedLogins > 0) {
+    var penalty = Math.min(opts.failedLogins * 5, 25);
+    score -= penalty;
+    factors.push({ factor: 'Failed Logins', impact: -penalty, detail: opts.failedLogins + ' recent failures' });
+  } else {
+    factors.push({ factor: 'Failed Logins', impact: 0, detail: 'None' });
+  }
+
+  // 4. Geo-location check (-15 if unusual country)
+  if (opts.geoLocation && opts.lastGeo && opts.lastGeo !== opts.geoLocation) {
+    // only penalize if both are non-empty and different
+    if (opts.lastGeo.length > 3 && opts.geoLocation.length > 3) {
+      score -= 15;
+      factors.push({ factor: 'Geo Location', impact: -15, detail: 'Location changed' });
+    }
+  } else {
+    factors.push({ factor: 'Geo Location', impact: 0, detail: 'Consistent' });
+  }
+
+  // 5. New device (-10 if device not approved)
+  if (!opts.deviceApproved) {
+    score -= 10;
+    factors.push({ factor: 'Device Trust', impact: -10, detail: 'New or unapproved device' });
+  } else {
+    factors.push({ factor: 'Device Trust', impact: 0, detail: 'Approved device' });
+  }
+
+  // 6. Time of day (-5 if outside business hours)
+  var hour = new Date().getUTCHours();
+  if (hour < 6 || hour > 22) {
+    score -= 5;
+    factors.push({ factor: 'Time of Day', impact: -5, detail: 'Off-hours access' });
+  } else {
+    factors.push({ factor: 'Time of Day', impact: 0, detail: 'Business hours' });
+  }
+
+  // clamp score to 0-100
+  score = Math.max(0, Math.min(100, score));
+
+  return { score: score, factors: factors };
+}
+
 
 // login - check email and password, generate OTP and send to Gmail
 router.post('/login', async (req, res) => {
   const supabase = req.app.locals.supabase;
   const otpStore = req.app.locals.otpStore;
+
   try {
     const { email, password } = req.body;
+    var clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required' });
+    }
+
+    // IP check
+    var ipCheck = await checkIP(supabase, clientIp);
+    if (!ipCheck.allowed) {
+      await logEvent(supabase, {
+        eventType: 'login_blocked_ip',
+        severity: 'critical',
+        userEmail: email.toLowerCase(),
+        ipAddress: clientIp,
+        details: 'Login blocked — ' + ipCheck.reason
+      });
+      return res.status(403).json({ error: 'Access denied from your network' });
     }
 
     const { data: user, error } = await supabase
@@ -56,38 +137,89 @@ router.post('/login', async (req, res) => {
       .single();
 
     if (error || !user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      await logEvent(supabase, {
+        eventType: 'login_failed',
+        severity: 'warning',
+        userEmail: email.toLowerCase(),
+        ipAddress: clientIp,
+        details: 'Invalid email — user not found'
+      });
+      return res.status(401).json({ error: 'Invalid email or password' });
     }
 
+    // Check if user is suspended
     if (user.status === 'Suspended') {
-      return res.status(403).json({ error: 'Account suspended' });
+      await logEvent(supabase, {
+        eventType: 'login_blocked_suspended',
+        severity: 'warning',
+        userEmail: email.toLowerCase(),
+        userId: user.id,
+        ipAddress: clientIp,
+        details: 'Login blocked — user account is suspended'
+      });
+      return res.status(403).json({ error: 'Account is suspended. Contact administrator.' });
     }
 
-    const match = await bcrypt.compare(password, user.password);
+    // check max failed logins policy
+    var maxFailed = parseInt(await getPolicy(supabase, 'max_failed_logins', '5'));
+    if (user.failed_login_count >= maxFailed) {
+      await logEvent(supabase, {
+        eventType: 'login_blocked_lockout',
+        severity: 'critical',
+        userEmail: email.toLowerCase(),
+        userId: user.id,
+        ipAddress: clientIp,
+        details: 'Account locked — ' + user.failed_login_count + ' failed attempts (max: ' + maxFailed + ')'
+      });
+      return res.status(403).json({ error: 'Account locked due to too many failed attempts. Contact administrator.' });
+    }
+
+    var match = await bcrypt.compare(password, user.password);
     if (!match) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      // increment failed login count
+      var newCount = (user.failed_login_count || 0) + 1;
+      await supabase.from('users').update({ failed_login_count: newCount }).eq('id', user.id);
+
+      await logEvent(supabase, {
+        eventType: 'login_failed',
+        severity: 'warning',
+        userEmail: email.toLowerCase(),
+        userId: user.id,
+        ipAddress: clientIp,
+        details: 'Wrong password (attempt ' + newCount + '/' + maxFailed + ')'
+      });
+      return res.status(401).json({ error: 'Invalid email or password' });
     }
 
-    // generate 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    // password correct — generate OTP
+    var code = String(Math.floor(100000 + Math.random() * 900000));
 
-    // store OTP server-side with 60-second expiry
+    // store OTP with user info
     otpStore.set(email.toLowerCase(), {
-      code: otp,
+      code: code,
       expiresAt: Date.now() + 60000,
       userId: user.id,
       name: user.name,
       role: user.role
     });
 
-    // send OTP to user's email
+    // send OTP email
     try {
-      await sendOtpEmail(email, otp);
+      await sendOtpEmail(email, code);
       console.log('OTP sent to ' + email);
     } catch (mailErr) {
       console.error('Failed to send OTP email:', mailErr.message);
       return res.status(500).json({ error: 'Failed to send OTP email. Check server email configuration.' });
     }
+
+    await logEvent(supabase, {
+      eventType: 'otp_sent',
+      severity: 'info',
+      userEmail: email.toLowerCase(),
+      userId: user.id,
+      ipAddress: clientIp,
+      details: 'OTP sent successfully'
+    });
 
     res.json({
       message: 'OTP sent to your email',
@@ -113,10 +245,10 @@ router.post('/resend-otp', async (req, res) => {
       return res.status(400).json({ error: 'Email is required' });
     }
 
-    // verify user still exists and is active
+    // find the user
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, name, role, status')
+      .select('id, name, role')
       .eq('email', email.toLowerCase())
       .single();
 
@@ -124,29 +256,22 @@ router.post('/resend-otp', async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    if (user.status === 'Suspended') {
-      return res.status(403).json({ error: 'Account suspended' });
-    }
+    // generate new OTP
+    var code = String(Math.floor(100000 + Math.random() * 900000));
 
-    // generate new 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-
-    // store OTP server-side with 60-second expiry
     otpStore.set(email.toLowerCase(), {
-      code: otp,
+      code: code,
       expiresAt: Date.now() + 60000,
       userId: user.id,
       name: user.name,
       role: user.role
     });
 
-    // send OTP email
     try {
-      await sendOtpEmail(email, otp);
-      console.log('OTP resent to ' + email);
+      await sendOtpEmail(email, code);
     } catch (mailErr) {
-      console.error('Failed to resend OTP email:', mailErr.message);
-      return res.status(500).json({ error: 'Failed to send OTP email' });
+      console.error('Failed to resend OTP:', mailErr.message);
+      return res.status(500).json({ error: 'Failed to send OTP. Check email configuration.' });
     }
 
     res.json({ message: 'OTP resent to your email' });
@@ -160,8 +285,10 @@ router.post('/resend-otp', async (req, res) => {
 router.post('/verify-otp', async (req, res) => {
   const supabase = req.app.locals.supabase;
   const otpStore = req.app.locals.otpStore;
+
   try {
     const { userId, code } = req.body;
+    var clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
 
     if (!userId || !code) {
       return res.status(400).json({ error: 'User ID and OTP code are required' });
@@ -169,33 +296,48 @@ router.post('/verify-otp', async (req, res) => {
 
     // find the OTP entry for this userId
     var foundEmail = null;
-    var otpEntry = null;
     otpStore.forEach(function (value, key) {
-      if (String(value.userId) === String(userId)) {
+      if (value.userId === userId) {
         foundEmail = key;
-        otpEntry = value;
       }
     });
 
-    if (!otpEntry) {
-      return res.status(400).json({ error: 'No OTP found. Please login again.' });
+    if (!foundEmail) {
+      return res.status(400).json({ error: 'No OTP found. Please log in again.' });
     }
 
+    var otpData = otpStore.get(foundEmail);
+
     // check expiry
-    if (Date.now() > otpEntry.expiresAt) {
+    if (Date.now() > otpData.expiresAt) {
       otpStore.delete(foundEmail);
-      return res.status(400).json({ error: 'OTP expired. Click Resend.' });
+      return res.status(400).json({ error: 'OTP expired. Click Resend Code.' });
     }
 
     // check code
-    if (code !== otpEntry.code) {
-      return res.status(401).json({ error: 'Wrong OTP' });
+    if (code !== otpData.code) {
+      await logEvent(supabase, {
+        eventType: 'otp_failed',
+        severity: 'warning',
+        userEmail: foundEmail,
+        userId: userId,
+        ipAddress: clientIp,
+        details: 'Invalid OTP code entered'
+      });
+      return res.status(400).json({ error: 'Invalid OTP code' });
     }
 
-    // OTP valid — remove from store
+    // OTP correct! clean up
     otpStore.delete(foundEmail);
 
-    // fetch full user data
+    // reset failed login count on successful login
+    await supabase.from('users').update({
+      failed_login_count: 0,
+      last_login_ip: clientIp,
+      last_login_at: new Date().toISOString()
+    }).eq('id', userId);
+
+    // get full user data
     const { data, error } = await supabase
       .from('users')
       .select('*')
@@ -205,6 +347,54 @@ router.post('/verify-otp', async (req, res) => {
     if (error || !data) {
       return res.status(404).json({ error: 'User not found' });
     }
+
+    // calculate risk score
+    var riskResult = calculateRiskScore({
+      deviceHealth: '', // will be enriched by frontend
+      lastLoginIp: data.last_login_ip || '',
+      currentIp: clientIp,
+      failedLogins: data.failed_login_count || 0,
+      geoLocation: '',
+      lastGeo: '',
+      deviceApproved: true // we'll assume default for now, frontend enriches
+    });
+
+    // save risk score
+    await supabase.from('users').update({ last_risk_score: riskResult.score }).eq('id', userId);
+
+    // create session
+    var sessionTimeout = parseInt(await getPolicy(supabase, 'session_timeout_minutes', '30'));
+    var sessionRes = null;
+    try {
+      var { data: sessionData } = await supabase
+        .from('sessions')
+        .insert({
+          user_id: userId,
+          user_email: data.email,
+          user_name: data.name,
+          ip_address: clientIp,
+          browser: '',
+          os: '',
+          fingerprint: '',
+          geo_location: '',
+          expires_at: new Date(Date.now() + sessionTimeout * 60 * 1000).toISOString(),
+          is_active: true
+        })
+        .select('*')
+        .single();
+      sessionRes = sessionData;
+    } catch (sessErr) {
+      console.error('Session creation error:', sessErr.message);
+    }
+
+    await logEvent(supabase, {
+      eventType: 'login_success',
+      severity: 'info',
+      userEmail: data.email,
+      userId: userId,
+      ipAddress: clientIp,
+      details: 'Login successful — risk score: ' + riskResult.score
+    });
 
     var user = {
       _id: data.id,
@@ -216,7 +406,11 @@ router.post('/verify-otp', async (req, res) => {
       mfa: data.mfa,
       phone: data.phone || '',
       gender: data.gender || '',
-      createdAt: data.created_at
+      createdAt: data.created_at,
+      riskScore: riskResult.score,
+      riskFactors: riskResult.factors,
+      sessionId: sessionRes ? sessionRes.id : null,
+      sessionExpiresAt: sessionRes ? sessionRes.expires_at : null
     };
 
     res.json({ message: 'Verified', user: user });
@@ -260,6 +454,7 @@ router.get('/profile/:id', async (req, res) => {
 // update user profile (name, phone, gender, password)
 router.put('/profile/:id', async (req, res) => {
   const supabase = req.app.locals.supabase;
+
   try {
     var updates = {};
     if (req.body.name) updates.name = req.body.name;
@@ -267,28 +462,35 @@ router.put('/profile/:id', async (req, res) => {
     if (req.body.gender !== undefined) updates.gender = req.body.gender;
 
     // password change
-    if (req.body.newPassword) {
-      if (!req.body.currentPassword) {
-        return res.status(400).json({ error: 'Current password is required' });
-      }
-
+    if (req.body.currentPassword && req.body.newPassword) {
       // verify current password
-      const { data: user, error: fetchErr } = await supabase
+      const { data: user } = await supabase
         .from('users')
         .select('password')
         .eq('id', req.params.id)
         .single();
 
-      if (fetchErr || !user) {
-        return res.status(404).json({ error: 'User not found' });
+      if (!user) return res.status(404).json({ error: 'User not found' });
+
+      var match = await bcrypt.compare(req.body.currentPassword, user.password);
+      if (!match) {
+        return res.status(400).json({ error: 'Current password is incorrect' });
       }
 
-      const match = await bcrypt.compare(req.body.currentPassword, user.password);
-      if (!match) {
-        return res.status(401).json({ error: 'Current password is incorrect' });
+      // check min length policy
+      var minLen = parseInt(await getPolicy(supabase, 'password_min_length', '8'));
+      if (req.body.newPassword.length < minLen) {
+        return res.status(400).json({ error: 'Password must be at least ' + minLen + ' characters' });
       }
 
       updates.password = await bcrypt.hash(req.body.newPassword, 10);
+
+      await logEvent(supabase, {
+        eventType: 'password_changed',
+        severity: 'info',
+        userId: req.params.id,
+        details: 'Password changed successfully'
+      });
     }
 
     if (Object.keys(updates).length === 0) {
@@ -304,12 +506,19 @@ router.put('/profile/:id', async (req, res) => {
 
     if (error) {
       console.error('Profile update error:', error.message);
-      // if column doesn't exist, give helpful message
       if (error.message && error.message.includes('does not exist')) {
-        return res.status(500).json({ error: 'Database migration needed. Please run migrate.sql in Supabase SQL Editor.' });
+        return res.status(400).json({ error: 'Database needs migration. Run migrate.sql in Supabase SQL Editor.' });
       }
       throw error;
     }
+
+    await logEvent(supabase, {
+      eventType: 'profile_updated',
+      severity: 'info',
+      userId: req.params.id,
+      userEmail: data.email,
+      details: 'Profile updated: ' + Object.keys(updates).filter(function (k) { return k !== 'password'; }).join(', ')
+    });
 
     res.json({
       message: 'Profile updated',
