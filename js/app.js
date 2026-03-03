@@ -15,24 +15,31 @@ document.addEventListener('DOMContentLoaded', async function () {
   if (savedSession) {
     try {
       currentUser = JSON.parse(savedSession);
-      if (currentUser && currentUser.email) {
+    } catch (e) {
+      sessionStorage.removeItem('zt_session');
+      currentUser = null;
+    }
+
+    if (currentUser && currentUser.email) {
+      try {
         if (currentUser.role === 'Super Admin' || currentUser.role === 'Admin') {
           document.getElementById('admin-email').textContent = currentUser.email;
           document.getElementById('admin-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
-          await loadUsers();
-          await loadDepartments();
-          await loadDevices();
-          updateStats();
           showPage('admin-dashboard');
+          // load data in background (don't block page show)
+          loadUsers().catch(function () {});
+          loadDepartments().catch(function () {});
+          loadDevices().catch(function () {});
+          setTimeout(updateStats, 500);
         } else {
           document.getElementById('user-email').textContent = currentUser.email;
           document.getElementById('user-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
           showPage('user-dashboard');
         }
+      } catch (e) {
+        console.error('Session restore error:', e);
+        // don't clear session — just show login
       }
-    } catch (e) {
-      sessionStorage.removeItem('zt_session');
-      currentUser = null;
     }
   }
 
