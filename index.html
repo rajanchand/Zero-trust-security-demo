@@ -73,6 +73,7 @@
     <div class="tab-bar">
       <button class="tab active" data-tab="tab-home"><i class="fas fa-home"></i> Home</button>
       <button class="tab" data-tab="tab-users"><i class="fas fa-users-gear"></i> User Management</button>
+      <button class="tab" data-tab="tab-devices"><i class="fas fa-laptop-medical"></i> Device Approvals</button>
     </div>
 
     <!-- HOME TAB -->
@@ -97,6 +98,11 @@
           <p class="stat-num red-text" id="stat-blocked">156</p>
           <p class="stat-label">Blocked Attempts</p>
           <small class="stat-hint">Click for details</small>
+        </div>
+        <div class="stat-card clickable" onclick="switchToTab('tab-devices')">
+          <p class="stat-num purple-text" id="stat-pending-devices">0</p>
+          <p class="stat-label">Pending Devices</p>
+          <small class="stat-hint">Click to review</small>
         </div>
       </div>
     </main>
@@ -134,6 +140,41 @@
     </main>
 
     <!-- CREATE USER MODAL -->
+    <div class="modal-overlay hide" id="create-user-modal">
+
+    <!-- DEVICE APPROVALS TAB -->
+    <main id="tab-devices" class="tab-content">
+      <h2><i class="fas fa-laptop-medical"></i> Device Approvals</h2>
+      <p class="muted">Review and approve/reject device access requests. Zero Trust requires every device to be verified before granting access.</p>
+
+      <div class="device-filter-bar">
+        <button class="filter-btn active" onclick="filterDevices('all')">All</button>
+        <button class="filter-btn" onclick="filterDevices('Pending')">Pending</button>
+        <button class="filter-btn" onclick="filterDevices('Approved')">Approved</button>
+        <button class="filter-btn" onclick="filterDevices('Rejected')">Rejected</button>
+      </div>
+
+      <div class="panel">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>IP Address</th>
+                <th>Geo Location</th>
+                <th>Device Health</th>
+                <th>Browser</th>
+                <th>Status</th>
+                <th>Approved By</th>
+                <th>Date</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="devices-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
     <div class="modal-overlay hide" id="create-user-modal">
       <div class="modal">
         <div class="modal-header">
@@ -312,6 +353,42 @@
         </ul>
       </div>
     </main>
+  </div>
+
+  <!-- DEVICE PENDING APPROVAL PAGE -->
+  <div id="device-pending-page" class="page">
+    <div class="form-card">
+      <div class="icon-circle orange"><i class="fas fa-laptop-medical"></i></div>
+      <h1>Device Approval Required</h1>
+      <p class="muted">Your device needs to be approved by an administrator before you can access the system.</p>
+
+      <div class="device-info-card">
+        <div class="device-info-row">
+          <span class="device-label"><i class="fas fa-globe"></i> IP Address</span>
+          <span class="device-value" id="pending-ip">—</span>
+        </div>
+        <div class="device-info-row">
+          <span class="device-label"><i class="fas fa-map-marker-alt"></i> Location</span>
+          <span class="device-value" id="pending-geo">—</span>
+        </div>
+        <div class="device-info-row">
+          <span class="device-label"><i class="fas fa-desktop"></i> Browser</span>
+          <span class="device-value" id="pending-browser">—</span>
+        </div>
+        <div class="device-info-row">
+          <span class="device-label"><i class="fas fa-heartbeat"></i> Device Health</span>
+          <span class="device-value" id="pending-health">—</span>
+        </div>
+        <div class="device-info-row">
+          <span class="device-label"><i class="fas fa-clock"></i> Status</span>
+          <span class="device-value"><span class="badge orange-bg" id="pending-status">Pending Approval</span></span>
+        </div>
+      </div>
+
+      <button class="btn btn-blue" onclick="checkDeviceApproval()"><i class="fas fa-sync-alt"></i> Check Status</button>
+      <button class="btn btn-small btn-outline" onclick="logout()" style="margin-top:10px;">Back to Login</button>
+      <p id="device-pending-msg" class="profile-msg hide"></p>
+    </div>
   </div>
 
   <!-- PROFILE MODAL (shared by admin & user dashboards) -->

@@ -72,6 +72,7 @@ app.use(function (req, _res, next) {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/departments', require('./routes/departments'));
+app.use('/api/devices', require('./routes/devices'));
 
 // global error handler
 app.use(function (err, _req, res, _next) {

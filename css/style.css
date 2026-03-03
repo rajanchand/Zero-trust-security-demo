@@ -469,3 +469,102 @@ th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #
 .user-pill:hover {
   background: #e2e8f0;
 }
+
+/* ========== DEVICE APPROVAL STYLES ========== */
+
+/* device info card (pending page) */
+.device-info-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 20px 0;
+  text-align: left;
+}
+.device-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+.device-info-row:last-child {
+  border-bottom: none;
+}
+.device-label {
+  font-weight: 600;
+  color: #475569;
+  font-size: 13px;
+}
+.device-label i {
+  width: 20px;
+  text-align: center;
+  margin-right: 6px;
+  color: #4F6EF7;
+}
+.device-value {
+  color: #1e293b;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* filter buttons */
+.device-filter-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.filter-btn {
+  padding: 6px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  background: #fff;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.filter-btn:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+.filter-btn.active {
+  background: #4F6EF7;
+  color: #fff;
+  border-color: #4F6EF7;
+}
+
+/* table scroll for wide tables */
+.table-scroll {
+  overflow-x: auto;
+}
+.table-scroll table {
+  min-width: 900px;
+}
+
+/* success button */
+.tbl-btn.success {
+  color: #16a34a;
+}
+.tbl-btn.success:hover {
+  background: #dcfce7;
+}
+
+/* code style for IP */
+code {
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #334155;
+}
+
+/* orange icon circle */
+.icon-circle.orange {
+  background: #f97316;
+}
+
+/* purple stat number */
+.purple-text { color: #8b5cf6; }

@@ -3,6 +3,8 @@ var currentUser = null;
 var otpTimer = null;
 var departments = [];
 var allUsers = [];
+var allDevices = [];
+var deviceFilter = 'all';
 var editingUserId = null;
 
 // wait for page to load
@@ -128,12 +130,56 @@ document.addEventListener('DOMContentLoaded', function () {
 
       currentUser = data.user;
 
+      // ---- DEVICE APPROVAL CHECK ----
+      var deviceInfo = getDeviceInfo();
+
+      // fetch real IP and geo location
+      var ipInfo = await fetchIPInfo();
+      deviceInfo.ipAddress = ipInfo.ip;
+      deviceInfo.geoLocation = ipInfo.geo;
+
+      try {
+        var devResponse = await fetch('/api/devices/request', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: currentUser._id,
+            userEmail: currentUser.email,
+            userName: currentUser.name,
+            ipAddress: deviceInfo.ipAddress,
+            geoLocation: deviceInfo.geoLocation,
+            deviceHealth: deviceInfo.deviceHealth,
+            browser: deviceInfo.browser,
+            os: deviceInfo.os,
+            fingerprint: deviceInfo.fingerprint
+          })
+        });
+        var devData = await devResponse.json();
+
+        // Super Admin bypasses device approval
+        if (currentUser.role === 'Super Admin') {
+          // auto-approve for super admin
+        } else if (!devData.approved) {
+          // device not approved — show pending page
+          document.getElementById('pending-ip').textContent = deviceInfo.ipAddress || '—';
+          document.getElementById('pending-geo').textContent = deviceInfo.geoLocation || '—';
+          document.getElementById('pending-browser').textContent = deviceInfo.browser || '—';
+          document.getElementById('pending-health').textContent = deviceInfo.deviceHealth || '—';
+          showPage('device-pending-page');
+          return;
+        }
+      } catch (devErr) {
+        console.error('Device check error:', devErr);
+        // if device check fails, continue anyway (graceful degradation)
+      }
+
       // show the right dashboard based on role
-      if (currentUser.role === 'Super Admin') {
+      if (currentUser.role === 'Super Admin' || currentUser.role === 'Admin') {
         document.getElementById('admin-email').textContent = currentUser.email;
         document.getElementById('admin-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
         await loadUsers();
         await loadDepartments();
+        await loadDevices();
         updateStats();
         showPage('admin-dashboard');
       } else {
@@ -439,6 +485,7 @@ function updateStats() {
   if (el) {
     el.textContent = allUsers.length;
   }
+  updateDeviceStats();
 }
 
 // fill department dropdown options (both create and edit modals)
@@ -772,4 +819,270 @@ function openModal(modalId) {
 
 function closeModal(modalId) {
   document.getElementById(modalId).classList.add('hide');
+}
+
+
+// ========== DEVICE INFO & FINGERPRINT ==========
+
+function getDeviceInfo() {
+  var ua = navigator.userAgent;
+
+  // browser detection
+  var browser = 'Unknown';
+  if (ua.indexOf('Firefox') > -1) browser = 'Firefox';
+  else if (ua.indexOf('Edg') > -1) browser = 'Microsoft Edge';
+  else if (ua.indexOf('Chrome') > -1) browser = 'Chrome';
+  else if (ua.indexOf('Safari') > -1) browser = 'Safari';
+  else if (ua.indexOf('Opera') > -1 || ua.indexOf('OPR') > -1) browser = 'Opera';
+
+  // OS detection
+  var os = 'Unknown';
+  if (ua.indexOf('Windows') > -1) os = 'Windows';
+  else if (ua.indexOf('Mac') > -1) os = 'macOS';
+  else if (ua.indexOf('Linux') > -1) os = 'Linux';
+  else if (ua.indexOf('Android') > -1) os = 'Android';
+  else if (ua.indexOf('iPhone') > -1 || ua.indexOf('iPad') > -1) os = 'iOS';
+
+  // device health assessment
+  var health = 'Good';
+  if (!window.isSecureContext) health = 'Poor — Not HTTPS';
+  else if (navigator.cookieEnabled === false) health = 'Fair — Cookies Disabled';
+
+  // simple fingerprint from browser properties
+  var fingerprint = generateFingerprint();
+
+  return {
+    browser: browser + ' (' + os + ')',
+    os: os,
+    deviceHealth: health,
+    ipAddress: '',  // will be filled by geolocation API
+    geoLocation: '', // will be filled by geolocation API
+    fingerprint: fingerprint
+  };
+}
+
+function generateFingerprint() {
+  var components = [
+    navigator.userAgent,
+    navigator.language,
+    screen.width + 'x' + screen.height,
+    screen.colorDepth,
+    new Date().getTimezoneOffset(),
+    navigator.hardwareConcurrency || 'unknown',
+    navigator.platform || 'unknown'
+  ];
+  // simple hash
+  var str = components.join('|');
+  var hash = 0;
+  for (var i = 0; i < str.length; i++) {
+    var char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // convert to 32-bit integer
+  }
+  return 'DEV-' + Math.abs(hash).toString(16).toUpperCase();
+}
+
+// fetch IP and geo location from free API
+async function fetchIPInfo() {
+  try {
+    var response = await fetch('https://ipapi.co/json/');
+    var data = await response.json();
+    return {
+      ip: data.ip || '',
+      geo: (data.city || '') + ', ' + (data.region || '') + ', ' + (data.country_name || '')
+    };
+  } catch (err) {
+    return { ip: 'Unknown', geo: 'Unknown' };
+  }
+}
+
+
+// ========== DEVICE APPROVALS (ADMIN) ==========
+
+async function loadDevices() {
+  try {
+    var response = await fetch('/api/devices');
+    allDevices = await response.json();
+    renderDevicesTable();
+    updateDeviceStats();
+  } catch (err) {
+    console.error('Failed to load devices', err);
+  }
+}
+
+function renderDevicesTable() {
+  var tbody = document.getElementById('devices-table-body');
+  if (!tbody) return;
+  var html = '';
+
+  var filtered = allDevices;
+  if (deviceFilter !== 'all') {
+    filtered = [];
+    for (var i = 0; i < allDevices.length; i++) {
+      if (allDevices[i].status === deviceFilter) {
+        filtered.push(allDevices[i]);
+      }
+    }
+  }
+
+  if (filtered.length === 0) {
+    html = '<tr><td colspan="9" style="text-align:center;color:#94a3b8;padding:32px;">No device requests found</td></tr>';
+    tbody.innerHTML = html;
+    return;
+  }
+
+  for (var j = 0; j < filtered.length; j++) {
+    var d = filtered[j];
+
+    var statusBadge = 'orange-bg';
+    if (d.status === 'Approved') statusBadge = 'green-bg';
+    if (d.status === 'Rejected') statusBadge = 'red-bg';
+
+    var healthBadge = 'green-bg';
+    if (d.device_health && d.device_health.indexOf('Fair') > -1) healthBadge = 'orange-bg';
+    if (d.device_health && d.device_health.indexOf('Poor') > -1) healthBadge = 'red-bg';
+
+    var dateStr = d.created_at ? new Date(d.created_at).toLocaleString() : '—';
+    var approvedBy = d.approved_by || '—';
+
+    html += '<tr>';
+    html += '<td><strong>' + (d.user_name || '—') + '</strong><br><small class="muted">' + (d.user_email || '') + '</small></td>';
+    html += '<td><code>' + (d.ip_address || '—') + '</code></td>';
+    html += '<td>' + (d.geo_location || '—') + '</td>';
+    html += '<td><span class="badge ' + healthBadge + '">' + (d.device_health || 'Unknown') + '</span></td>';
+    html += '<td>' + (d.browser || '—') + '</td>';
+    html += '<td><span class="badge ' + statusBadge + '">' + d.status + '</span></td>';
+    html += '<td>' + approvedBy + '</td>';
+    html += '<td><small>' + dateStr + '</small></td>';
+    html += '<td class="td-actions">';
+
+    if (d.status === 'Pending') {
+      html += '<button class="tbl-btn success" onclick="approveDevice(\'' + d.id + '\')" title="Approve"><i class="fas fa-check"></i></button>';
+      html += '<button class="tbl-btn danger" onclick="rejectDevice(\'' + d.id + '\')" title="Reject"><i class="fas fa-times"></i></button>';
+    } else {
+      html += '<button class="tbl-btn danger" onclick="deleteDevice(\'' + d.id + '\')" title="Delete"><i class="fas fa-trash"></i></button>';
+    }
+
+    html += '</td>';
+    html += '</tr>';
+  }
+
+  tbody.innerHTML = html;
+}
+
+function updateDeviceStats() {
+  var pending = 0;
+  for (var i = 0; i < allDevices.length; i++) {
+    if (allDevices[i].status === 'Pending') pending++;
+  }
+  var el = document.getElementById('stat-pending-devices');
+  if (el) el.textContent = pending;
+}
+
+function filterDevices(status) {
+  deviceFilter = status;
+
+  // update filter buttons
+  var btns = document.querySelectorAll('.filter-btn');
+  for (var i = 0; i < btns.length; i++) {
+    btns[i].classList.remove('active');
+  }
+  event.target.classList.add('active');
+
+  renderDevicesTable();
+}
+
+async function approveDevice(deviceId) {
+  if (!confirm('Approve this device?')) return;
+  try {
+    var response = await fetch('/api/devices/' + deviceId + '/approve', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approvedBy: currentUser.email })
+    });
+    if (response.ok) {
+      await loadDevices();
+    } else {
+      var data = await response.json();
+      alert(data.error || 'Failed to approve');
+    }
+  } catch (err) {
+    alert('Failed to approve device');
+  }
+}
+
+async function rejectDevice(deviceId) {
+  if (!confirm('Reject this device?')) return;
+  try {
+    var response = await fetch('/api/devices/' + deviceId + '/reject', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ approvedBy: currentUser.email })
+    });
+    if (response.ok) {
+      await loadDevices();
+    } else {
+      var data = await response.json();
+      alert(data.error || 'Failed to reject');
+    }
+  } catch (err) {
+    alert('Failed to reject device');
+  }
+}
+
+async function deleteDevice(deviceId) {
+  if (!confirm('Delete this device record?')) return;
+  try {
+    var response = await fetch('/api/devices/' + deviceId, { method: 'DELETE' });
+    if (response.ok) {
+      await loadDevices();
+    } else {
+      alert('Failed to delete device record');
+    }
+  } catch (err) {
+    alert('Failed to delete device record');
+  }
+}
+
+// user checks if their device has been approved
+async function checkDeviceApproval() {
+  if (!currentUser) return;
+
+  var msgEl = document.getElementById('device-pending-msg');
+  msgEl.textContent = 'Checking...';
+  msgEl.className = 'profile-msg';
+
+  var fingerprint = generateFingerprint();
+
+  try {
+    var response = await fetch('/api/devices/check/' + currentUser._id + '/' + fingerprint);
+    var data = await response.json();
+
+    if (data.approved) {
+      msgEl.textContent = 'Device approved! Redirecting...';
+      msgEl.className = 'profile-msg success';
+
+      setTimeout(function () {
+        if (currentUser.role === 'Admin') {
+          document.getElementById('admin-email').textContent = currentUser.email;
+          document.getElementById('admin-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
+          loadUsers();
+          loadDepartments();
+          loadDevices();
+          updateStats();
+          showPage('admin-dashboard');
+        } else {
+          document.getElementById('user-email').textContent = currentUser.email;
+          document.getElementById('user-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
+          showPage('user-dashboard');
+        }
+      }, 1500);
+    } else {
+      msgEl.textContent = 'Still pending. Please wait for admin approval.';
+      msgEl.className = 'profile-msg err';
+    }
+  } catch (err) {
+    msgEl.textContent = 'Failed to check status';
+    msgEl.className = 'profile-msg err';
+  }
 }
