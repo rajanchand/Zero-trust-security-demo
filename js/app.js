@@ -8,7 +8,33 @@ var deviceFilter = 'all';
 var editingUserId = null;
 
 // wait for page to load
-document.addEventListener('DOMContentLoaded', function () {
+document.addEventListener('DOMContentLoaded', async function () {
+
+  // ---- RESTORE SESSION ON PAGE LOAD ----
+  var savedSession = sessionStorage.getItem('zt_session');
+  if (savedSession) {
+    try {
+      currentUser = JSON.parse(savedSession);
+      if (currentUser && currentUser.email) {
+        if (currentUser.role === 'Super Admin' || currentUser.role === 'Admin') {
+          document.getElementById('admin-email').textContent = currentUser.email;
+          document.getElementById('admin-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
+          await loadUsers();
+          await loadDepartments();
+          await loadDevices();
+          updateStats();
+          showPage('admin-dashboard');
+        } else {
+          document.getElementById('user-email').textContent = currentUser.email;
+          document.getElementById('user-greeting').textContent = 'Welcome, ' + currentUser.name + ' 👋';
+          showPage('user-dashboard');
+        }
+      }
+    } catch (e) {
+      sessionStorage.removeItem('zt_session');
+      currentUser = null;
+    }
+  }
 
   // ---- LOGIN FORM ----
   document.getElementById('login-form').addEventListener('submit', async function (e) {
@@ -129,6 +155,9 @@ document.addEventListener('DOMContentLoaded', function () {
       }
 
       currentUser = data.user;
+
+      // save session so refresh doesn't logout
+      sessionStorage.setItem('zt_session', JSON.stringify(currentUser));
 
       // ---- DEVICE APPROVAL CHECK ----
       var deviceInfo = getDeviceInfo();
@@ -395,6 +424,7 @@ function logout() {
   clearInterval(otpTimer);
   currentUser = null;
   otp = null;
+  sessionStorage.removeItem('zt_session');
   document.getElementById('email').value = '';
   document.getElementById('password').value = '';
   document.getElementById('login-error').classList.add('hide');
