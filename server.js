@@ -60,6 +60,17 @@ runMigrations();
 // middleware
 app.use(cors());
 app.use(express.json());
+
+// no-cache headers for HTML/JS/CSS (prevent stale browser cache)
+app.use(function (req, res, next) {
+  if (req.url.endsWith('.html') || req.url.endsWith('.js') || req.url.endsWith('.css') || req.url === '/') {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
+
 app.use(express.static(path.join(__dirname)));
 
 // simple request logger
