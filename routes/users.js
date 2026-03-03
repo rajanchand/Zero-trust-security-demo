@@ -1,180 +1,165 @@
+// ============================================
+// ZTS — User Management Routes
+// NIST SP 800-207: Least Privilege Access
+// ============================================
+// Implements: RBAC, user CRUD, block/unblock,
+// reset password, enable/disable MFA
+
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { logEvent } = require('./audit');
 
-// helper: map supabase row to front-end shape (id -> _id)
-function mapUser(row) {
-  return {
-    _id: row.id,
-    name: row.name,
-    email: row.email,
-    role: row.role,
-    department: row.department,
-    status: row.status,
-    mfa: row.mfa,
-    phone: row.phone || '',
-    gender: row.gender || '',
-    createdAt: row.created_at
-  };
-}
+// Roles for RBAC (ordered by privilege)
+const VALID_ROLES = ['SuperAdmin', 'HR', 'Finance', 'IT', 'CustomerSupport'];
 
-// get all users (exclude super admin)
+// GET all users (admin only)
 router.get('/', async (req, res) => {
-  const supabase = req.app.locals.supabase;
+  var supabase = req.app.locals.supabase;
   try {
-    const { data, error } = await supabase
-      .from('users')
-      .select('*')
-      .neq('role', 'Super Admin')
+    var { data, error } = await supabase.from('users')
+      .select('id, name, email, role, department, status, mfa, phone, gender, created_at, last_login_at, last_risk_score, failed_login_count, last_login_ip, is_blocked')
       .order('created_at', { ascending: false });
 
     if (error) throw error;
-    res.json(data.map(mapUser));
+
+    var users = (data || []).map(function (u) {
+      return {
+        _id: u.id, name: u.name, email: u.email, role: u.role,
+        department: u.department, status: u.status, mfa: u.mfa,
+        phone: u.phone, gender: u.gender, createdAt: u.created_at,
+        lastLoginAt: u.last_login_at, lastRiskScore: u.last_risk_score,
+        failedLoginCount: u.failed_login_count, lastLoginIp: u.last_login_ip,
+        isBlocked: u.is_blocked
+      };
+    });
+
+    res.json(users);
   } catch (err) {
-    res.status(500).json({ error: err.message || 'Server error' });
+    res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
 
-// create a new user
+// CREATE user
 router.post('/', async (req, res) => {
-  const supabase = req.app.locals.supabase;
+  var supabase = req.app.locals.supabase;
   try {
-    const { name, email, password, role, department } = req.body;
+    var { name, email, password, role, department } = req.body;
+    if (!name || !email || !password) return res.status(400).json({ error: 'Name, email and password required' });
 
-    if (!name || !email || !password) {
-      return res.status(400).json({ error: 'Name, email and password are required' });
-    }
+    // Validate role
+    if (role && VALID_ROLES.indexOf(role) === -1) return res.status(400).json({ error: 'Invalid role. Must be: ' + VALID_ROLES.join(', ') });
 
-    // check if email already exists
-    const { data: existing } = await supabase
-      .from('users')
-      .select('id')
-      .eq('email', email.toLowerCase());
+    // Check duplicate email
+    var { data: existing } = await supabase.from('users').select('id').eq('email', email.toLowerCase()).limit(1);
+    if (existing && existing.length > 0) return res.status(400).json({ error: 'Email already exists' });
 
-    if (existing && existing.length > 0) {
-      return res.status(409).json({ error: 'Email already exists' });
-    }
-
-    const hashed = await bcrypt.hash(password, 10);
-
-    const { data, error } = await supabase
-      .from('users')
-      .insert([{
-        name: name,
-        email: email.toLowerCase(),
-        password: hashed,
-        role: role || 'User',
-        department: department || 'General',
-        status: 'Active',
-        mfa: true
-      }])
-      .select()
-      .single();
+    var hash = await bcrypt.hash(password, 10);
+    var { data, error } = await supabase.from('users').insert({
+      name: name, email: email.toLowerCase(), password: hash,
+      role: role || 'CustomerSupport', department: department || 'General',
+      status: 'Active', mfa: true
+    }).select('*').single();
 
     if (error) throw error;
 
-    await logEvent(supabase, {
-      eventType: 'user_created',
-      severity: 'info',
-      userEmail: data.email,
-      details: 'New user created: ' + data.name + ' (' + data.role + ')'
-    });
+    await logEvent(supabase, { eventType: 'user_created', severity: 'info', userEmail: email.toLowerCase(), details: 'User created with role: ' + (role || 'CustomerSupport') });
 
-    res.status(201).json(mapUser(data));
+    res.status(201).json({ message: 'User created', user: data });
   } catch (err) {
-    res.status(500).json({ error: err.message || 'Server error' });
+    res.status(500).json({ error: err.message || 'Failed to create user' });
   }
 });
 
-// update a user (name, email, role, department, status, mfa, password)
+// UPDATE user
 router.put('/:id', async (req, res) => {
-  const supabase = req.app.locals.supabase;
+  var supabase = req.app.locals.supabase;
   try {
-    const id = req.params.id;
     var updates = {};
     if (req.body.name) updates.name = req.body.name;
     if (req.body.email) updates.email = req.body.email.toLowerCase();
-    if (req.body.role) updates.role = req.body.role;
+    if (req.body.role) {
+      if (VALID_ROLES.indexOf(req.body.role) === -1) return res.status(400).json({ error: 'Invalid role' });
+      updates.role = req.body.role;
+    }
     if (req.body.department) updates.department = req.body.department;
     if (req.body.status) updates.status = req.body.status;
-    if (typeof req.body.mfa === 'boolean') updates.mfa = req.body.mfa;
+    if (req.body.mfa !== undefined) updates.mfa = req.body.mfa;
+    if (req.body.password) updates.password = await bcrypt.hash(req.body.password, 10);
 
-    // allow password change
-    if (req.body.password) {
-      updates.password = await bcrypt.hash(req.body.password, 10);
-    }
-
-    // nothing to update
-    if (Object.keys(updates).length === 0) {
-      return res.status(400).json({ error: 'No fields to update' });
-    }
-
-    // if email changed, check it's not already taken by another user
-    if (updates.email) {
-      const { data: dup } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', updates.email)
-        .neq('id', id);
-      if (dup && dup.length > 0) {
-        return res.status(409).json({ error: 'Email already in use by another user' });
-      }
-    }
-
-    const { data, error } = await supabase
-      .from('users')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-
+    var { data, error } = await supabase.from('users').update(updates).eq('id', req.params.id).select('*').single();
     if (error) throw error;
-    if (!data) return res.status(404).json({ error: 'User not found' });
 
-    await logEvent(supabase, {
-      eventType: 'user_updated',
-      severity: 'info',
-      userEmail: data.email,
-      details: 'User updated: ' + Object.keys(updates).join(', ')
-    });
+    await logEvent(supabase, { eventType: 'user_updated', severity: 'info', userEmail: data.email, details: 'Updated: ' + Object.keys(updates).join(', ') });
 
-    res.json(mapUser(data));
+    res.json({ message: 'User updated', user: data });
   } catch (err) {
-    res.status(500).json({ error: err.message || 'Server error' });
+    res.status(500).json({ error: err.message || 'Failed to update user' });
   }
 });
 
-// delete a user
+// DELETE user
 router.delete('/:id', async (req, res) => {
-  const supabase = req.app.locals.supabase;
+  var supabase = req.app.locals.supabase;
   try {
-    const id = req.params.id;
-    console.log('DELETE user id:', id);
-
-    const { data, error } = await supabase
-      .from('users')
-      .delete()
-      .eq('id', id)
-      .select();
-
-    console.log('DELETE result — data:', JSON.stringify(data), 'error:', error);
-
-    if (error) throw error;
-    if (!data || data.length === 0) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    await logEvent(supabase, {
-      eventType: 'user_deleted',
-      severity: 'warning',
-      details: 'User deleted: ' + id
-    });
-
-    res.json({ message: 'User removed' });
+    var { data: user } = await supabase.from('users').select('email').eq('id', req.params.id).single();
+    await supabase.from('users').delete().eq('id', req.params.id);
+    if (user) await logEvent(supabase, { eventType: 'user_deleted', severity: 'warning', userEmail: user.email, details: 'User deleted' });
+    res.json({ message: 'User deleted' });
   } catch (err) {
-    console.error('DELETE error:', err);
-    res.status(500).json({ error: err.message || 'Server error' });
+    res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+// BLOCK/UNBLOCK user
+router.put('/:id/block', async (req, res) => {
+  var supabase = req.app.locals.supabase;
+  try {
+    var blocked = req.body.blocked !== false;
+    var { data, error } = await supabase.from('users').update({ is_blocked: blocked }).eq('id', req.params.id).select('email').single();
+    if (error) throw error;
+
+    await logEvent(supabase, { eventType: blocked ? 'user_blocked' : 'user_unblocked', severity: 'warning', userEmail: data.email, details: (blocked ? 'Blocked' : 'Unblocked') + ' by admin' });
+
+    res.json({ message: blocked ? 'User blocked' : 'User unblocked' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+// RESET PASSWORD (admin)
+router.put('/:id/reset-password', async (req, res) => {
+  var supabase = req.app.locals.supabase;
+  try {
+    var newPassword = req.body.password || 'ZTS@2026';
+    var hash = await bcrypt.hash(newPassword, 10);
+    var { data, error } = await supabase.from('users')
+      .update({ password: hash, failed_login_count: 0, locked_until: null })
+      .eq('id', req.params.id).select('email').single();
+    if (error) throw error;
+
+    await logEvent(supabase, { eventType: 'password_reset', severity: 'warning', userEmail: data.email, details: 'Password reset by admin' });
+
+    res.json({ message: 'Password reset successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+// TOGGLE MFA
+router.put('/:id/toggle-mfa', async (req, res) => {
+  var supabase = req.app.locals.supabase;
+  try {
+    var { data: user } = await supabase.from('users').select('mfa, email').eq('id', req.params.id).single();
+    if (!user) return res.status(404).json({ error: 'Not found' });
+
+    var newMfa = !user.mfa;
+    await supabase.from('users').update({ mfa: newMfa }).eq('id', req.params.id);
+    await logEvent(supabase, { eventType: 'mfa_toggled', severity: 'info', userEmail: user.email, details: 'MFA ' + (newMfa ? 'enabled' : 'disabled') });
+
+    res.json({ message: 'MFA ' + (newMfa ? 'enabled' : 'disabled'), mfa: newMfa });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed' });
   }
 });
 

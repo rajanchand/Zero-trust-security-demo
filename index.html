@@ -1,554 +1,253 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Zero Trust Security</title>
+  <title>ZTS — Zero Trust Security Demo</title>
+  <meta name="description"
+    content="Zero Trust Security Demo — NIST SP 800-207 based enterprise security simulation for MSc dissertation">
   <link rel="stylesheet" href="css/style.css">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
+
 <body>
 
-  <!-- LOGIN PAGE -->
+  <!-- ========== LOGIN PAGE ========== -->
   <div id="login-page" class="page active">
-    <div class="form-card">
-      <div class="icon-circle blue"><i class="fas fa-shield-halved"></i></div>
-      <h1>Zero Trust Security</h1>
-      <p class="muted">Never Trust, Always Verify</p>
-      <form id="login-form">
-        <label>Email</label>
-        <input type="email" id="email" placeholder="Enter your email" required>
-        <label>Password</label>
-        <input type="password" id="password" placeholder="Enter your password" required>
-        <button type="submit" class="btn btn-blue">Sign In</button>
-        <p id="login-error" class="error hide"></p>
-      </form>
+    <div class="login-container">
+      <div class="login-card">
+        <div class="login-logo"><i class="fas fa-shield-halved"></i></div>
+        <h1>ZTS</h1>
+        <p class="login-subtitle">Zero Trust Security Demo</p>
+        <p class="login-tagline">Never Trust, Always Verify — NIST SP 800-207</p>
+        <form id="login-form">
+          <div class="input-group">
+            <i class="fas fa-envelope"></i>
+            <input type="email" id="email" placeholder="Email address" required autocomplete="email">
+          </div>
+          <div class="input-group">
+            <i class="fas fa-lock"></i>
+            <input type="password" id="password" placeholder="Password" required autocomplete="current-password">
+          </div>
+          <button type="submit" class="btn-primary" id="login-btn"><i class="fas fa-right-to-bracket"></i> Sign
+            In</button>
+        </form>
+        <div id="login-error" class="error-box hide"></div>
+        <p class="login-footer"><i class="fas fa-lock"></i> Protected by Zero Trust Architecture</p>
+      </div>
     </div>
   </div>
 
-  <!-- OTP PAGE -->
+  <!-- ========== OTP PAGE ========== -->
   <div id="otp-page" class="page">
-    <div class="form-card">
-      <div class="icon-circle green"><i class="fas fa-lock"></i></div>
-      <h1>OTP Verification</h1>
-      <p class="muted">A 6-digit code has been sent to your email</p>
-
-      <div class="otp-banner">
-        <small><i class="fas fa-envelope"></i> OTP sent to</small>
-        <div class="otp-email" id="otp-email-display">your email</div>
-        <small class="timer">Expires in <strong id="otp-timer">60</strong>s</small>
-      </div>
-
-      <form id="otp-form">
-        <div class="otp-row">
-          <input type="text" maxlength="1" class="otp-input">
-          <input type="text" maxlength="1" class="otp-input">
-          <input type="text" maxlength="1" class="otp-input">
-          <input type="text" maxlength="1" class="otp-input">
-          <input type="text" maxlength="1" class="otp-input">
-          <input type="text" maxlength="1" class="otp-input">
-        </div>
-        <button type="submit" class="btn btn-green">Verify</button>
-        <p id="otp-error" class="error hide"></p>
-      </form>
-      <div class="form-links">
-        <a href="#" id="resend-btn">Resend Code</a>
-        <a href="#" id="back-btn">Back to Login</a>
-      </div>
-    </div>
-  </div>
-
-  <!-- ADMIN DASHBOARD -->
-  <div id="admin-dashboard" class="page">
-    <header>
-      <div><i class="fas fa-shield-halved blue-text"></i> <strong>Zero Trust</strong> &mdash; Admin</div>
-      <div class="header-right">
-        <div class="session-timer-pill hide" id="session-timer-pill" title="Session expires">
-          <i class="fas fa-clock"></i> <span id="session-timer-text">30:00</span>
-        </div>
-        <span class="user-pill" onclick="openProfileModal()" style="cursor:pointer" title="View Profile"><i class="fas fa-user-tie"></i> <span id="admin-email"></span></span>
-        <button class="btn btn-small btn-red" id="admin-logout">Logout</button>
-      </div>
-    </header>
-
-    <!-- tabs -->
-    <div class="tab-bar">
-      <button class="tab active" data-tab="tab-home"><i class="fas fa-home"></i> Home</button>
-      <button class="tab" data-tab="tab-users"><i class="fas fa-users-gear"></i> User Management</button>
-      <button class="tab" data-tab="tab-devices"><i class="fas fa-laptop-medical"></i> Device Approvals</button>
-      <button class="tab" data-tab="tab-audit"><i class="fas fa-scroll"></i> Audit Logs</button>
-      <button class="tab" data-tab="tab-sessions"><i class="fas fa-network-wired"></i> Sessions</button>
-      <button class="tab" data-tab="tab-access"><i class="fas fa-globe-lock"></i> Access Policies</button>
-    </div>
-
-    <!-- HOME TAB -->
-    <main id="tab-home" class="tab-content active">
-      <h2 id="admin-greeting">Welcome, Admin</h2>
-      <div class="grid-4">
-        <div class="stat-card clickable" onclick="switchToTab('tab-users')">
-          <p class="stat-num blue-text" id="stat-total-users">0</p>
-          <p class="stat-label">Total Users</p>
-          <small class="stat-hint">Click to manage</small>
-        </div>
-        <div class="stat-card clickable" onclick="switchToTab('tab-sessions')">
-          <p class="stat-num green-text" id="stat-active-sessions">0</p>
-          <p class="stat-label">Active Sessions</p>
-          <small class="stat-hint">Click to manage</small>
-        </div>
-        <div class="stat-card clickable" onclick="switchToTab('tab-audit')">
-          <p class="stat-num orange-text" id="stat-audit-warnings">0</p>
-          <p class="stat-label">Warnings (24h)</p>
-          <small class="stat-hint">Click for logs</small>
-        </div>
-        <div class="stat-card clickable" onclick="switchToTab('tab-audit')">
-          <p class="stat-num red-text" id="stat-audit-critical">0</p>
-          <p class="stat-label">Critical Events</p>
-          <small class="stat-hint">Click for details</small>
-        </div>
-        <div class="stat-card clickable" onclick="switchToTab('tab-devices')">
-          <p class="stat-num purple-text" id="stat-pending-devices">0</p>
-          <p class="stat-label">Pending Devices</p>
-          <small class="stat-hint">Click to review</small>
-        </div>
-      </div>
-
-      <!-- Security Policies Quick View -->
-      <div class="panel">
-        <h3><i class="fas fa-sliders"></i> Security Policies</h3>
-        <div id="policies-panel" class="policies-grid">
-          <p class="muted">Loading policies...</p>
-        </div>
-      </div>
-    </main>
-
-    <!-- USER MANAGEMENT TAB -->
-    <main id="tab-users" class="tab-content">
-      <h2>User Management</h2>
-
-      <div class="action-bar">
-        <button class="btn btn-blue btn-small" onclick="openModal('create-user-modal')">
-          <i class="fas fa-user-plus"></i> Create User
-        </button>
-        <button class="btn btn-small btn-outline" onclick="openModal('dept-modal')">
-          <i class="fas fa-building"></i> Manage Departments
-        </button>
-      </div>
-
-      <div class="panel">
-        <h3>All Users</h3>
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Email</th>
-              <th>Role</th>
-              <th>Department</th>
-              <th>Status</th>
-              <th>MFA</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="users-table-body"></tbody>
-        </table>
-      </div>
-    </main>
-
-    <!-- DEVICE APPROVALS TAB -->
-    <main id="tab-devices" class="tab-content">
-      <h2><i class="fas fa-laptop-medical"></i> Device Approvals</h2>
-      <p class="muted">Review and approve/reject device access requests. Zero Trust requires every device to be verified before granting access.</p>
-
-      <div class="device-filter-bar">
-        <button class="filter-btn active" onclick="filterDevices('all')">All</button>
-        <button class="filter-btn" onclick="filterDevices('Pending')">Pending</button>
-        <button class="filter-btn" onclick="filterDevices('Approved')">Approved</button>
-        <button class="filter-btn" onclick="filterDevices('Rejected')">Rejected</button>
-      </div>
-
-      <div class="panel">
-        <div class="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>User</th>
-                <th>IP Address</th>
-                <th>Geo Location</th>
-                <th>Device Health</th>
-                <th>Browser</th>
-                <th>Status</th>
-                <th>Approved By</th>
-                <th>Date</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="devices-table-body"></tbody>
-          </table>
-        </div>
-      </div>
-    </main>
-
-    <!-- AUDIT LOGS TAB -->
-    <main id="tab-audit" class="tab-content">
-      <h2><i class="fas fa-scroll"></i> Audit Logs</h2>
-      <p class="muted">Complete security event trail. Every action is logged and timestamped for compliance.</p>
-
-      <div class="device-filter-bar">
-        <button class="filter-btn active" onclick="filterAudit('all')">All</button>
-        <button class="filter-btn" onclick="filterAudit('info')"><i class="fas fa-circle-info blue-text"></i> Info</button>
-        <button class="filter-btn" onclick="filterAudit('warning')"><i class="fas fa-triangle-exclamation orange-text"></i> Warning</button>
-        <button class="filter-btn" onclick="filterAudit('critical')"><i class="fas fa-circle-exclamation red-text"></i> Critical</button>
-      </div>
-
-      <div class="panel">
-        <div class="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Severity</th>
-                <th>Event</th>
-                <th>User</th>
-                <th>IP Address</th>
-                <th>Details</th>
-                <th>Time</th>
-              </tr>
-            </thead>
-            <tbody id="audit-table-body"></tbody>
-          </table>
-        </div>
-      </div>
-    </main>
-
-    <!-- SESSIONS TAB -->
-    <main id="tab-sessions" class="tab-content">
-      <h2><i class="fas fa-network-wired"></i> Active Sessions</h2>
-      <p class="muted">Monitor and manage all active user sessions. Revoke suspicious sessions immediately.</p>
-
-      <div class="device-filter-bar">
-        <button class="filter-btn active" onclick="filterSessions('all')">All</button>
-        <button class="filter-btn" onclick="filterSessions('active')"><i class="fas fa-circle green-text"></i> Active</button>
-        <button class="filter-btn" onclick="filterSessions('expired')"><i class="fas fa-circle red-text"></i> Expired/Revoked</button>
-      </div>
-
-      <div class="panel">
-        <div class="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>User</th>
-                <th>IP Address</th>
-                <th>Location</th>
-                <th>Browser</th>
-                <th>Created</th>
-                <th>Expires</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="sessions-table-body"></tbody>
-          </table>
-        </div>
-      </div>
-    </main>
-
-    <!-- ACCESS POLICIES TAB -->
-    <main id="tab-access" class="tab-content">
-      <h2><i class="fas fa-globe-lock"></i> Access Policies</h2>
-      <p class="muted">Manage IP allowlist and blocklist rules. Control network-level access to the application.</p>
-
-      <div class="grid-2">
-        <div class="panel">
-          <h3><i class="fas fa-shield-check green-text"></i> IP Allowlist</h3>
-          <div class="dept-add-row">
-            <input type="text" id="allow-ip-input" placeholder="e.g. 192.168.1.*">
-            <input type="text" id="allow-ip-label" placeholder="Label" style="width:120px">
-            <button class="btn btn-small btn-green" style="margin-top:0" onclick="addIPRule('allow')">Add</button>
+    <div class="login-container">
+      <div class="login-card">
+        <div class="login-logo otp-logo"><i class="fas fa-key"></i></div>
+        <h2>Multi-Factor Authentication</h2>
+        <p class="login-subtitle">Enter the 6-digit code sent to</p>
+        <p class="otp-email" id="otp-email-display"></p>
+        <form id="otp-form">
+          <div class="otp-boxes">
+            <input type="text" maxlength="1" class="otp-input" autofocus>
+            <input type="text" maxlength="1" class="otp-input">
+            <input type="text" maxlength="1" class="otp-input">
+            <input type="text" maxlength="1" class="otp-input">
+            <input type="text" maxlength="1" class="otp-input">
+            <input type="text" maxlength="1" class="otp-input">
           </div>
-          <ul class="simple-list" id="allow-ip-list"></ul>
-        </div>
-        <div class="panel">
-          <h3><i class="fas fa-ban red-text"></i> IP Blocklist</h3>
-          <div class="dept-add-row">
-            <input type="text" id="block-ip-input" placeholder="e.g. 10.0.0.*">
-            <input type="text" id="block-ip-label" placeholder="Label" style="width:120px">
-            <button class="btn btn-small btn-red" style="margin-top:0" onclick="addIPRule('block')">Add</button>
-          </div>
-          <ul class="simple-list" id="block-ip-list"></ul>
-        </div>
-      </div>
-    </main>
-
-    <!-- CREATE USER MODAL -->
-    <div class="modal-overlay hide" id="create-user-modal">
-      <div class="modal">
-        <div class="modal-header">
-          <h3>Create New User</h3>
-          <button class="modal-close" onclick="closeModal('create-user-modal')">&times;</button>
-        </div>
-        <form id="create-user-form">
-          <label>Full Name</label>
-          <input type="text" id="new-name" placeholder="e.g. John Doe" required>
-          <label>Email</label>
-          <input type="email" id="new-email" placeholder="e.g. john@example.com" required>
-          <label>Password</label>
-          <input type="password" id="new-password" placeholder="Set a password" required>
-          <label>Role</label>
-          <select id="new-role">
-            <option value="User">User</option>
-            <option value="Admin">Admin</option>
-            <option value="Manager">Manager</option>
-            <option value="Viewer">Viewer</option>
-          </select>
-          <label>Department</label>
-          <select id="new-dept"></select>
-          <button type="submit" class="btn btn-blue">Create User</button>
+          <button type="submit" class="btn-primary"><i class="fas fa-check-circle"></i> Verify Code</button>
         </form>
-      </div>
-    </div>
-
-    <!-- EDIT USER MODAL -->
-    <div class="modal-overlay hide" id="edit-user-modal">
-      <div class="modal">
-        <div class="modal-header">
-          <h3>Edit User</h3>
-          <button class="modal-close" onclick="closeModal('edit-user-modal')">&times;</button>
+        <div id="otp-error" class="error-box hide"></div>
+        <p class="otp-timer">Code expires in <span id="otp-timer">60</span>s</p>
+        <div class="otp-actions">
+          <a href="#" id="resend-btn">Resend Code</a>
+          <a href="#" id="back-btn">Back to Login</a>
         </div>
-        <form id="edit-user-form">
-          <label>Full Name</label>
-          <input type="text" id="edit-name" placeholder="Full name" required>
-          <label>Email</label>
-          <input type="email" id="edit-email" placeholder="Email" required>
-          <label>Role</label>
-          <select id="edit-role-select">
-            <option value="User">User</option>
-            <option value="Admin">Admin</option>
-            <option value="Manager">Manager</option>
-            <option value="Viewer">Viewer</option>
-          </select>
-          <label>Department</label>
-          <select id="edit-dept-select"></select>
-          <label>Status</label>
-          <select id="edit-status-select">
-            <option value="Active">Active</option>
-            <option value="Suspended">Suspended</option>
-          </select>
-          <label>
-            <input type="checkbox" id="edit-mfa"> MFA Enabled
-          </label>
-          <button type="submit" class="btn btn-blue">Save Changes</button>
-        </form>
-      </div>
-    </div>
-
-    <!-- MANAGE DEPARTMENTS MODAL -->
-    <div class="modal-overlay hide" id="dept-modal">
-      <div class="modal">
-        <div class="modal-header">
-          <h3>Manage Departments</h3>
-          <button class="modal-close" onclick="closeModal('dept-modal')">&times;</button>
-        </div>
-        <div class="dept-add-row">
-          <input type="text" id="new-dept-name" placeholder="New department name">
-          <button class="btn btn-blue btn-small" onclick="addDepartment()">Add</button>
-        </div>
-        <ul class="simple-list" id="dept-list"></ul>
       </div>
     </div>
   </div>
 
-  <!-- USER DASHBOARD -->
-  <div id="user-dashboard" class="page">
-    <header class="header-green">
-      <div><i class="fas fa-shield-halved green-text"></i> <strong>Zero Trust</strong> &mdash; Portal</div>
-      <div class="header-right">
-        <div class="session-timer-pill hide" id="user-session-timer-pill" title="Session expires">
-          <i class="fas fa-clock"></i> <span id="user-session-timer-text">30:00</span>
-        </div>
-        <span class="user-pill" onclick="openProfileModal()" style="cursor:pointer" title="View Profile"><i class="fas fa-user"></i> <span id="user-email"></span></span>
-        <button class="btn btn-small btn-red" id="user-logout">Logout</button>
-      </div>
-    </header>
-
-    <main>
-      <h2 id="user-greeting">Welcome</h2>
-
-      <!-- Risk Score Card -->
-      <div class="risk-score-card" id="risk-score-card">
-        <div class="risk-gauge">
-          <div class="risk-gauge-fill" id="risk-gauge-fill" style="width:0%"></div>
-        </div>
-        <div class="risk-score-row">
-          <div>
-            <span class="risk-score-number" id="risk-score-number">—</span>
-            <span class="risk-score-label">Trust Score</span>
-          </div>
-          <div class="risk-factors" id="risk-factors-list"></div>
-        </div>
-      </div>
-
-      <div class="grid-4">
-        <div class="stat-card">
-          <p class="stat-num green-text">12</p>
-          <p class="stat-label">Resources</p>
-        </div>
-        <div class="stat-card">
-          <p class="stat-num purple-text">Active</p>
-          <p class="stat-label">Session</p>
-        </div>
-        <div class="stat-card">
-          <p class="stat-num orange-text">MFA ✓</p>
-          <p class="stat-label">Verified</p>
-        </div>
-      </div>
-
-      <div class="grid-2">
-        <div class="panel">
-          <h3>Security Compliance</h3>
-          <ul class="simple-list">
-            <li><i class="fas fa-circle-check green-text"></i> Multi-Factor Authentication</li>
-            <li><i class="fas fa-circle-check green-text"></i> Device Registration</li>
-            <li><i class="fas fa-circle-check green-text"></i> Password Policy</li>
-            <li><i class="fas fa-circle-exclamation orange-text"></i> Security Training <span class="badge orange-bg">Pending</span></li>
-          </ul>
-        </div>
-        <div class="panel">
-          <h3>Your Resources</h3>
-          <ul class="simple-list">
-            <li><i class="fas fa-file-alt blue-text"></i> Documents <span class="badge green-bg">Access</span></li>
-            <li><i class="fas fa-database blue-text"></i> Database <span class="badge green-bg">Read Only</span></li>
-            <li><i class="fas fa-code blue-text"></i> Source Code <span class="badge green-bg">Read/Write</span></li>
-            <li class="dimmed"><i class="fas fa-server"></i> Server Access <span class="badge red-bg">Denied</span></li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="panel">
-        <h3>Recent Activity</h3>
-        <ul class="simple-list">
-          <li><i class="fas fa-check green-text"></i> Logged in via MFA <small>Just now</small></li>
-          <li><i class="fas fa-folder blue-text"></i> Accessed Project Files <small>Yesterday</small></li>
-          <li><i class="fas fa-key green-text"></i> Password updated <small>3 days ago</small></li>
-        </ul>
-      </div>
-    </main>
-  </div>
-
-  <!-- DEVICE PENDING APPROVAL PAGE -->
+  <!-- ========== DEVICE PENDING PAGE ========== -->
   <div id="device-pending-page" class="page">
-    <div class="form-card">
-      <div class="icon-circle orange"><i class="fas fa-laptop-medical"></i></div>
-      <h1>Device Approval Required</h1>
-      <p class="muted">Your device needs to be approved by an administrator before you can access the system.</p>
-
-      <div class="device-info-card">
-        <div class="device-info-row">
-          <span class="device-label"><i class="fas fa-globe"></i> IP Address</span>
-          <span class="device-value" id="pending-ip">—</span>
+    <div class="login-container">
+      <div class="login-card">
+        <div class="login-logo"><i class="fas fa-laptop-medical" style="color:#f59e0b"></i></div>
+        <h2>Device Verification Required</h2>
+        <p class="login-subtitle">Your device needs admin approval before access is granted.</p>
+        <div class="device-pending-info">
+          <div class="pending-row"><span>IP Address</span><span id="pending-ip">—</span></div>
+          <div class="pending-row"><span>Location</span><span id="pending-geo">—</span></div>
+          <div class="pending-row"><span>Browser</span><span id="pending-browser">—</span></div>
+          <div class="pending-row"><span>Device Health</span><span id="pending-health">—</span></div>
         </div>
-        <div class="device-info-row">
-          <span class="device-label"><i class="fas fa-map-marker-alt"></i> Location</span>
-          <span class="device-value" id="pending-geo">—</span>
-        </div>
-        <div class="device-info-row">
-          <span class="device-label"><i class="fas fa-desktop"></i> Browser</span>
-          <span class="device-value" id="pending-browser">—</span>
-        </div>
-        <div class="device-info-row">
-          <span class="device-label"><i class="fas fa-heartbeat"></i> Device Health</span>
-          <span class="device-value" id="pending-health">—</span>
-        </div>
-        <div class="device-info-row">
-          <span class="device-label"><i class="fas fa-clock"></i> Status</span>
-          <span class="device-value"><span class="badge orange-bg" id="pending-status">Pending Approval</span></span>
-        </div>
+        <div id="device-pending-msg" class="profile-msg hide"></div>
+        <button class="btn-primary" onclick="checkDeviceApproval()"><i class="fas fa-sync-alt"></i> Check
+          Status</button>
+        <button class="btn-secondary" onclick="logout()">Logout</button>
       </div>
-
-      <button class="btn btn-blue" onclick="checkDeviceApproval()"><i class="fas fa-sync-alt"></i> Check Status</button>
-      <button class="btn btn-small btn-outline" onclick="logout()" style="margin-top:10px;">Back to Login</button>
-      <p id="device-pending-msg" class="profile-msg hide"></p>
     </div>
   </div>
 
-  <!-- PROFILE MODAL (shared by admin & user dashboards) -->
-  <div class="modal-overlay hide" id="profile-modal">
-    <div class="modal modal-wide">
+  <!-- ========== MAIN APP (Sidebar + Content) ========== -->
+  <div id="app-page" class="page">
+    <div class="app-layout">
+      <!-- Sidebar -->
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+          <i class="fas fa-shield-halved"></i>
+          <span>ZTS</span>
+        </div>
+        <nav class="sidebar-nav" id="sidebar-nav">
+          <!-- Populated by JS based on role -->
+        </nav>
+        <div class="sidebar-footer">
+          <div class="sidebar-user" onclick="openProfileModal()">
+            <div class="sidebar-avatar" id="sidebar-avatar-letter">R</div>
+            <div class="sidebar-user-info">
+              <span id="sidebar-user-name">User</span>
+              <small id="sidebar-user-role">Role</small>
+            </div>
+          </div>
+          <button class="sidebar-logout" id="btn-logout" onclick="logout()">
+            <i class="fas fa-right-from-bracket"></i>
+          </button>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="main-content">
+        <header class="topbar">
+          <button class="menu-toggle" onclick="toggleSidebar()"><i class="fas fa-bars"></i></button>
+          <h1 id="page-title">Dashboard</h1>
+          <div class="topbar-right">
+            <div class="session-pill" id="session-pill">
+              <i class="fas fa-clock"></i>
+              <span id="session-timer-text">30:00</span>
+            </div>
+          </div>
+        </header>
+
+        <div class="content-area" id="content-area">
+          <!-- Content injected by JS -->
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- ========== PROFILE MODAL ========== -->
+  <div id="profile-modal" class="modal-overlay hide">
+    <div class="modal">
       <div class="modal-header">
-        <h3><i class="fas fa-user-circle blue-text"></i> My Profile</h3>
+        <h3><i class="fas fa-user-circle"></i> Profile Settings</h3>
         <button class="modal-close" onclick="closeModal('profile-modal')">&times;</button>
       </div>
-
-      <div class="profile-avatar-row">
+      <div class="profile-top">
         <div class="profile-avatar" id="profile-avatar-letter">R</div>
         <div>
-          <p class="profile-name" id="profile-display-name">Loading...</p>
-          <p class="profile-role" id="profile-display-role">—</p>
+          <h3 id="profile-display-name">Name</h3>
+          <p id="profile-display-role" class="muted">Role</p>
         </div>
       </div>
-
       <form id="profile-form">
-        <div class="form-row">
-          <div class="form-group">
-            <label>Full Name</label>
-            <input type="text" id="profile-name" placeholder="Your name" required>
-          </div>
-          <div class="form-group">
-            <label>Email Address</label>
-            <input type="email" id="profile-email" disabled>
-          </div>
-        </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label>Phone Number</label>
-            <input type="tel" id="profile-phone" placeholder="e.g. +44 7911 123456">
-          </div>
-          <div class="form-group">
-            <label>Gender</label>
-            <select id="profile-gender">
-              <option value="">— Select —</option>
+        <div class="form-grid">
+          <div class="input-group sm"><label>Name</label><input type="text" id="profile-name" required></div>
+          <div class="input-group sm"><label>Email</label><input type="email" id="profile-email" disabled></div>
+          <div class="input-group sm"><label>Phone</label><input type="text" id="profile-phone"></div>
+          <div class="input-group sm"><label>Gender</label><select id="profile-gender">
+              <option value="">—</option>
               <option value="Male">Male</option>
               <option value="Female">Female</option>
               <option value="Other">Other</option>
-              <option value="Prefer not to say">Prefer not to say</option>
+            </select></div>
+          <div class="input-group sm"><label>Department</label><input type="text" id="profile-department" disabled>
+          </div>
+          <div class="input-group sm"><label>Status</label><input type="text" id="profile-status" disabled></div>
+        </div>
+        <button type="submit" class="btn-primary sm"><i class="fas fa-save"></i> Save Changes</button>
+        <div id="profile-msg" class="profile-msg hide"></div>
+      </form>
+      <hr>
+      <h4>Change Password</h4>
+      <form id="password-form">
+        <div class="form-grid">
+          <div class="input-group sm"><label>Current Password</label><input type="password" id="pw-current" required>
+          </div>
+          <div class="input-group sm"><label>New Password</label><input type="password" id="pw-new" required></div>
+        </div>
+        <button type="submit" class="btn-primary sm"><i class="fas fa-key"></i> Update Password</button>
+        <div id="pw-msg" class="profile-msg hide"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ========== CREATE USER MODAL ========== -->
+  <div id="create-user-modal" class="modal-overlay hide">
+    <div class="modal">
+      <div class="modal-header">
+        <h3><i class="fas fa-user-plus"></i> Create User</h3>
+        <button class="modal-close" onclick="closeModal('create-user-modal')">&times;</button>
+      </div>
+      <form id="create-user-form">
+        <div class="form-grid">
+          <div class="input-group sm"><label>Full Name</label><input type="text" id="new-name" required></div>
+          <div class="input-group sm"><label>Email</label><input type="email" id="new-email" required></div>
+          <div class="input-group sm"><label>Password</label><input type="password" id="new-password" required></div>
+          <div class="input-group sm"><label>Role</label>
+            <select id="new-role">
+              <option value="CustomerSupport">Customer Support</option>
+              <option value="HR">HR</option>
+              <option value="Finance">Finance</option>
+              <option value="IT">IT</option>
+              <option value="SuperAdmin">Super Admin</option>
             </select>
           </div>
+          <div class="input-group sm"><label>Department</label><select id="new-dept"></select></div>
         </div>
-
-        <div class="form-row">
-          <div class="form-group">
-            <label>Department</label>
-            <input type="text" id="profile-department" disabled>
-          </div>
-          <div class="form-group">
-            <label>Status</label>
-            <input type="text" id="profile-status" disabled>
-          </div>
-        </div>
-
-        <button type="submit" class="btn btn-blue">Save Profile</button>
-        <p id="profile-msg" class="profile-msg hide"></p>
+        <button type="submit" class="btn-primary sm"><i class="fas fa-plus"></i> Create User</button>
       </form>
+    </div>
+  </div>
 
-      <hr class="divider">
-
-      <h4><i class="fas fa-key"></i> Change Password</h4>
-      <form id="password-form">
-        <div class="form-row">
-          <div class="form-group">
-            <label>Current Password</label>
-            <input type="password" id="pw-current" placeholder="Enter current password" required>
+  <!-- ========== EDIT USER MODAL ========== -->
+  <div id="edit-user-modal" class="modal-overlay hide">
+    <div class="modal">
+      <div class="modal-header">
+        <h3><i class="fas fa-user-pen"></i> Edit User</h3>
+        <button class="modal-close" onclick="closeModal('edit-user-modal')">&times;</button>
+      </div>
+      <form id="edit-user-form">
+        <div class="form-grid">
+          <div class="input-group sm"><label>Name</label><input type="text" id="edit-name" required></div>
+          <div class="input-group sm"><label>Email</label><input type="email" id="edit-email" required></div>
+          <div class="input-group sm"><label>Role</label>
+            <select id="edit-role-select">
+              <option value="CustomerSupport">Customer Support</option>
+              <option value="HR">HR</option>
+              <option value="Finance">Finance</option>
+              <option value="IT">IT</option>
+              <option value="SuperAdmin">Super Admin</option>
+            </select>
           </div>
-          <div class="form-group">
-            <label>New Password</label>
-            <input type="password" id="pw-new" placeholder="Enter new password" required>
+          <div class="input-group sm"><label>Department</label><select id="edit-dept-select"></select></div>
+          <div class="input-group sm"><label>Status</label>
+            <select id="edit-status-select">
+              <option value="Active">Active</option>
+              <option value="Suspended">Suspended</option>
+            </select>
+          </div>
+          <div class="input-group sm" style="align-items:center;flex-direction:row;gap:8px">
+            <input type="checkbox" id="edit-mfa"><label for="edit-mfa">MFA Enabled</label>
           </div>
         </div>
-        <button type="submit" class="btn btn-small btn-outline">Update Password</button>
-        <p id="pw-msg" class="profile-msg hide"></p>
+        <button type="submit" class="btn-primary sm"><i class="fas fa-save"></i> Save Changes</button>
       </form>
     </div>
   </div>
 
   <script src="js/app.js"></script>
 </body>
+
 </html>
