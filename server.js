@@ -20,6 +20,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 // make supabase available to routes
 app.locals.supabase = supabase;
 
+// in-memory OTP store: { email: { code, expiresAt, userId, name, role } }
+app.locals.otpStore = new Map();
+
 // auto-migrate: ensure phone and gender columns exist
 async function runMigrations() {
   try {

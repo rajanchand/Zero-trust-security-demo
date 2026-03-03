@@ -1,6 +1,5 @@
 // global variables
 var currentUser = null;
-var otp = null;
 var otpTimer = null;
 var departments = [];
 var allUsers = [];
@@ -33,8 +32,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
       // save user info and show OTP page
       currentUser = { userId: data.userId, name: data.name, role: data.role, email: email };
-      otp = data.otp;
-      document.getElementById('demo-otp').textContent = otp;
+      document.getElementById('otp-email-display').textContent = email;
       showPage('otp-page');
       startOtpTimer();
     } catch (err) {
@@ -93,31 +91,6 @@ document.addEventListener('DOMContentLoaded', function () {
       return;
     }
 
-    // check if OTP expired
-    if (!otp) {
-      errorBox.textContent = 'OTP expired. Click Resend.';
-      errorBox.classList.remove('hide');
-      return;
-    }
-
-    // check if OTP matches
-    if (code !== String(otp)) {
-      errorBox.textContent = 'Wrong OTP.';
-      errorBox.classList.remove('hide');
-      // shake the boxes and clear them
-      for (var j = 0; j < otpBoxes.length; j++) {
-        otpBoxes[j].classList.add('err');
-        otpBoxes[j].value = '';
-      }
-      setTimeout(function () {
-        for (var k = 0; k < otpBoxes.length; k++) {
-          otpBoxes[k].classList.remove('err');
-        }
-      }, 400);
-      otpBoxes[0].focus();
-      return;
-    }
-
     clearInterval(otpTimer);
 
     // verify with backend
@@ -125,9 +98,27 @@ document.addEventListener('DOMContentLoaded', function () {
       var response = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: currentUser.userId })
+        body: JSON.stringify({ userId: currentUser.userId, code: code })
       });
       var data = await response.json();
+
+      if (!response.ok) {
+        errorBox.textContent = data.error || 'Verification failed';
+        errorBox.classList.remove('hide');
+        // shake the boxes and clear them
+        for (var j = 0; j < otpBoxes.length; j++) {
+          otpBoxes[j].classList.add('err');
+          otpBoxes[j].value = '';
+        }
+        setTimeout(function () {
+          for (var k = 0; k < otpBoxes.length; k++) {
+            otpBoxes[k].classList.remove('err');
+          }
+        }, 400);
+        otpBoxes[0].focus();
+        startOtpTimer();
+        return;
+      }
 
       if (!response.ok) {
         errorBox.textContent = data.error;
@@ -159,25 +150,35 @@ document.addEventListener('DOMContentLoaded', function () {
   // ---- RESEND OTP ----
   document.getElementById('resend-btn').addEventListener('click', async function (e) {
     e.preventDefault();
-    var email = document.getElementById('email').value.trim();
-    var password = document.getElementById('password').value;
+    if (!currentUser || !currentUser.email) return;
+
+    this.textContent = 'Sending...';
+    this.style.pointerEvents = 'none';
 
     try {
-      var response = await fetch('/api/auth/login', {
+      var response = await fetch('/api/auth/resend-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email, password: password })
+        body: JSON.stringify({ email: currentUser.email })
       });
       var data = await response.json();
 
       if (response.ok) {
-        otp = data.otp;
-        document.getElementById('demo-otp').textContent = otp;
         startOtpTimer();
+        document.getElementById('otp-error').classList.add('hide');
+      } else {
+        var errorBox = document.getElementById('otp-error');
+        errorBox.textContent = data.error || 'Failed to resend';
+        errorBox.classList.remove('hide');
       }
     } catch (err) {
-      // silently fail
+      var errorBox2 = document.getElementById('otp-error');
+      errorBox2.textContent = 'Failed to resend OTP';
+      errorBox2.classList.remove('hide');
     }
+
+    this.textContent = 'Resend Code';
+    this.style.pointerEvents = 'auto';
   });
 
   // ---- BACK TO LOGIN ----
@@ -336,8 +337,9 @@ function startOtpTimer() {
     timerDisplay.textContent = seconds;
     if (seconds <= 0) {
       clearInterval(otpTimer);
-      otp = null;
-      document.getElementById('demo-otp').textContent = 'EXPIRED';
+      var errorBox = document.getElementById('otp-error');
+      errorBox.textContent = 'OTP expired. Click Resend Code.';
+      errorBox.classList.remove('hide');
     }
   }, 1000);
 }
